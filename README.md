@@ -1,4 +1,0 @@
-ports
-=====
-
-FreeBSD ports

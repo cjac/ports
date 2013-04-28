@@ -10,7 +10,6 @@ DOMAIN=ESD.COLLIERTECH.ORG
 ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
-WINBIND_STARTUP_PAUSE=60s
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
@@ -168,7 +167,8 @@ merge_ldsoconf_file () {
 }
 
 merge_pamsshd_file () {
-    echo "Merge changes from ${TAOS_RELEASE}/sshd into ${PAMSSHD_FILE} manually"
+		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
+		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
 }
 
 enable_services () {
@@ -230,7 +230,7 @@ enable_services
 
 # start services
 ${RCSAMBA_FILE} restart > /dev/null
-sleep ${WINBIND_STARTUP_PAUSE}
+${SAMBA_RUNNER} wbinfo --ping-dc
 
 # Verify winbind is functioning
 WBINFO=`${SAMBA_RUNNER} wbinfo -n ${SSH_USER} | grep SID_USER`

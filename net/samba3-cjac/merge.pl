@@ -6,6 +6,8 @@ use Data::Dumper;
 use lib 'lib';
 use Log::Log4perl;
 
+mkdir 'log' unless -d 'log';
+
 Log::Log4perl->init('log4perl.conf') or die "couldn't init logger: $!";
 
 my $logger = Log::Log4perl->get_logger('merge');
@@ -30,6 +32,12 @@ my $PDCHOSTS =
    awk '{print \$4}' |
    sed -e 's/\.\$//'`;
 
+my $INSTALL_ROOT =
+	exists $ENV{INSTALL_ROOT} ?
+	$ENV{INSTALL_ROOT} :
+	'/opt/taos/samba3';
+
+
 chomp $PDCHOSTS;
 
 $logger->debug( "PDCHOSTS: [$PDCHOSTS]" );
@@ -37,13 +45,7 @@ $logger->debug( "PDCHOSTS: [$PDCHOSTS]" );
 sub usage {
 	print "<$0> <command> [options]\n";
 	print "<$0> krb5conf [input krb5.conf] [output krb5.conf]\n";
-
-}
-
-sub errlog {
-	my( $package, $filename, $line ) = caller(1);
-	print( Data::Dumper->Dump([$package, $filename, $line]) );
-
+	print "<$0> pamconf <input pamconf> <output pamconf>\n";
 }
 
 sub merge_krb5conf_file {
@@ -174,6 +176,82 @@ sub merge_krb5conf_file {
 	return 1;
 }
 
+sub merge_pamconf_file {
+	my( $pamconf_filename, $output_filename ) = @_;
+
+	unless( $pamconf_filename ){
+		usage();
+		return 0;
+	}
+	unless( $output_filename ){
+		usage();
+		return 0;
+	}
+
+	open(my $fh, q{<}, $pamconf_filename) or die "can't open $pamconf_filename: $!";
+	my @lines = <$fh>;
+	close($fh);
+
+	my $section = 'header';
+	my @section_order;
+	push(@section_order, $section);
+	my %section_value = ( header => [] );
+	while(my $line = shift(@lines)){
+		if($line =~ /^\s*#?\s*(account|auth|password|session)/){
+			unless( $section eq $1 ){
+				$logger->debug("section changed to [$section]");
+				$section = $1;
+				push(@section_order, $section);
+			}
+		}
+
+		if($line =~ /^#/){
+			push(@{$section_value{$section}}, $line);
+			next;
+		}
+
+		while($line =~ /\\$/){
+			push(@{$section_value{$section}}, $line);
+			$line = shift(@lines);
+		}
+
+		push(@{$section_value{$section}}, $line);
+	}
+
+	foreach my $s (@section_order){
+		while($section_value{$s}->[-1] =~ /^\s*$/){
+			pop(@{$section_value{$s}});
+		}
+
+		$section_value{$s} = [grep { $_ !~ /pam_winbind/ } @{$section_value{$s}}];
+	}
+
+	push(@{$section_value{'auth'}},        "auth            sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
+	push(@{$section_value{'account'}},     "account         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
+	push(@{$section_value{'session'}},     "session         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so mkhomedir\n");
+	push(@{$section_value{'session'}},     "session         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so\n");
+	unshift(@{$section_value{'password'}}, "password        sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
+
+	foreach my $s (@section_order){
+		push(@{$section_value{$s}}, "\n");
+	}
+
+	my %completed_section = ();
+	my $output = '';
+	while( $section = shift(@section_order) ){
+		next if exists $completed_section{$section};
+
+		$output .= join('', @{$section_value{$section}});
+
+		$completed_section{$section}++;
+	}
+
+	open($fh, q{>}, $output_filename ) or die "can't open $output_filename: $!";
+	print $fh $output;
+
+	return 1;
+}
+
 my $command = shift( @ARGV );
 
 $logger->debug( "command: [$command]" );
@@ -189,6 +267,11 @@ my $return;
 if($command =~ /^krb5conf$/i){
 	$return = merge_krb5conf_file( @ARGV );
 	$logger->debug("krb5conf command returned: [$return]");
+}
+
+if($command =~ /^pamconf$/i){
+	$return = merge_pamconf_file( @ARGV );
+	$logger->debug("pamconf command returned: [$return]");
 }
 
 if( $return ){

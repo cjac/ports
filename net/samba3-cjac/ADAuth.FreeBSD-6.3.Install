@@ -145,13 +145,14 @@ merge_krb5conf_file () {
 				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     else
 				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
-				echo "\n\n[realms]\n${DOMAIN} = {" >> ${TEMP_FILE}
+				echo "[realms]" >> ${TEMP_FILE}
+				echo "${DOMAIN} = {" >> ${TEMP_FILE}
 				for kdc in ${PDCHOSTS}
 				do
 						echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
 						echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
 				done
-				echo "}\n\n" >> ${TEMP_FILE}
+				echo "}" >> ${TEMP_FILE}
 				
 				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}	
     fi
@@ -164,6 +165,8 @@ merge_ntpconf_file () {
 }
 
 merge_nssconf_file () {
+    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
+
 		${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${NSSCONF_FILE}
 }
@@ -180,6 +183,8 @@ merge_ldsoconf_file () {
 }
 
 merge_pamsshd_file () {
+    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
+
 		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
 }

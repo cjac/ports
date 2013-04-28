@@ -152,7 +152,8 @@ merge_ntpconf_file () {
 }
 
 merge_nssconf_file () {
-    echo "Merge changes from ${TAOS_RELEASE}/nsswitch.conf into ${NSSCONF_FILE} manually"
+		${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
+		cp -f ${TEMP_FILE} ${NSSCONF_FILE}
 }
 
 merge_ldsoconf_file () {

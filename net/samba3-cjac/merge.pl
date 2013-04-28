@@ -3,6 +3,7 @@ use warnings;
 use strict;
 
 use Data::Dumper;
+use File::Copy;
 use lib 'lib';
 use Log::Log4perl;
 
@@ -252,6 +253,78 @@ sub merge_pamconf_file {
 	return 1;
 }
 
+sub merge_nssconf_file {
+	my( $nssconf_filename, $output_filename ) = @_;
+
+	$nssconf_filename = '/etc/nsswitch.conf' unless $nssconf_filename;
+	$output_filename  = '/tmp/nsswitch.conf' unless $output_filename;
+
+	open( my $fh, q{<}, $nssconf_filename ) or die "can't open $nssconf_filename: $!";
+	my @lines = <$fh>;
+	close($fh);
+
+	my @sections = qw(passwd group shadow hosts networks protocols services ethers rpc netgroup shells);
+
+	my $orlist = join('|', @sections);
+	my $section_regex = qr{^($orlist)(_compat)?:};
+
+	my $output = '';
+	while(my $line = shift(@lines)){
+		if($line =~ $section_regex){
+			chomp($line);
+
+			my $section = $1;
+			my $svc = 'wins';
+
+			my($sec, @svcs) = split(/\s+/,$line);
+			$sec =~ s/:$//;
+
+			if($section eq 'passwd' || $section eq 'group'){
+				$svc = 'winbind';
+			}
+
+			$logger->debug("injecting $svc into $sec");
+
+			unless( -f "/lib/libnss_$svc.so" ){
+				my $message = "missing /lib/libnss_$svc.so - copy from ${INSTALL_ROOT}/lib/libnss_$svc.so";
+				print( $message );
+				$logger->error( $message );
+			}
+
+			unless( -f "/lib/libnss_$svc.so.2" ){
+				my $message = "missing /lib/libnss_$svc.so.2 - symlink from /lib/libnss_$svc.so";
+				print( $message );
+				$logger->error( $message );
+			}
+
+			my @services;
+			while ( my $service = shift( @svcs ) ) {
+				if ($service =~ /\[/) {
+					$logger->debug('service contains a [ character');
+					# the following should be enough to catch [NOTFOUND = return] in case that's valid
+					$service .= shift(@svcs) unless $service =~ /\]/;
+					$service .= shift(@svcs) unless $service =~ /\]/;
+				}
+				next if $service eq $svc;
+				push(@services, $service);
+			}
+
+			push(@services, $svc);
+
+			$output .= "$sec: " . join( ' ', @services ) . "\n";
+
+		}else{
+			$output .= $line;
+		}
+	}
+
+	open($fh, q{>}, $output_filename ) or die "can't open $output_filename: $!";
+	print $fh $output;
+	close($fh);
+
+	return 1;
+}
+
 my $command = shift( @ARGV );
 
 $logger->debug( "command: [$command]" );
@@ -267,14 +340,25 @@ my $return;
 if($command =~ /^krb5conf$/i){
 	$return = merge_krb5conf_file( @ARGV );
 	$logger->debug("krb5conf command returned: [$return]");
-}
-
-if($command =~ /^pamconf$/i){
+}elsif($command =~ /^pamconf$/i){
 	$return = merge_pamconf_file( @ARGV );
 	$logger->debug("pamconf command returned: [$return]");
+}elsif($command =~ /^nssconf$/i){
+	$return = merge_nssconf_file( @ARGV );
+	$logger->debug("nssconf command returned: [$return]");
+}else{
+	my( $input_filename, $output_filename ) = @_;
+
+	if( -f $input_filename ){
+		copy( $input_filename, $output_filename );
+
+		return 0;
+	}
+
+	return 1;
 }
 
-if( $return ){
+if( defined $return ){
 
 	$logger->debug( "command return value: [$return]" );
 	exit 0; # command success

@@ -24,6 +24,21 @@ NTPHOST=${PDCHOST}
 PERL=`which perl`
 PERL_VERSION=`perl -e 'print "$]\n"'`
 
+# create somewhere for log4perl to dump its logs
+if [ ! -d log ] ; then mkdir log ; fi
+chmod a+rwx log
+
+cat > log4perl.conf <<EOF
+log4perl.rootLogger=DEBUG, LOGFILE
+
+log4perl.appender.LOGFILE=Log::Log4perl::Appender::File
+log4perl.appender.LOGFILE.filename=log/merge.log
+log4perl.appender.LOGFILE.mode=append
+
+log4perl.appender.LOGFILE.layout=PatternLayout
+log4perl.appender.LOGFILE.layout.ConversionPattern=[%d] %F %L %c - %m%n
+EOF
+
 #
 #   FreeBSD 6.3-specific code
 #
@@ -45,7 +60,7 @@ export PACKAGESITE
 # Install dependencies - TODO: determind whether these are installed before doing so
 for pkg in heimdal cyrus-sasl ntp libiconv
 do
-    pkg_info | grep "^$pkg" || \
+    pkg_info | grep "^$pkg" >/dev/null || \
 	pkg_add -r $pkg
 done
 
@@ -53,7 +68,7 @@ done
 test -f samba3_${MARCH}.tgz
 if [ $? != 0 ]
 then
-		${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
+		${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz > /dev/null
 fi
 
 # cryptographically verify integrity of release package
@@ -83,12 +98,10 @@ merge_krb5conf_file () {
     # Work on Kerberos
     TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
 
-    echo "- Processing ${KRB5CONF_FILE}"
     cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
 
     cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
 
-    echo "-- Enabling dns_lookup_realm"
     grep 'dns_lookup_realm[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
@@ -100,7 +113,6 @@ merge_krb5conf_file () {
 				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
 	  fi
 
-    echo "-- Enabling dns_lookup_kdc"
     grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
@@ -114,7 +126,6 @@ merge_krb5conf_file () {
     fi
     cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
 
-    echo "-- Enabling default_realm"
     grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
@@ -127,7 +138,6 @@ merge_krb5conf_file () {
 				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     fi
 
-    echo "-- Enabling ${DOMAIN} realm"
     grep '\[realms\]' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
@@ -150,7 +160,7 @@ merge_krb5conf_file () {
 }
 
 merge_ntpconf_file () {
-    echo "Merge changes from ${TAOS_RELEASE}/ntp.conf into ${NTPCONF_FILE} manually"
+    # TODO: implement merge_ntpconf_file in merge.pl
 }
 
 merge_nssconf_file () {
@@ -162,10 +172,10 @@ merge_ldsoconf_file () {
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
-	grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+				grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
     RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-    grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+    grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
     ${LDCONFIG} ${LDSOCONF_FILE}
 }
 
@@ -175,8 +185,8 @@ merge_pamsshd_file () {
 }
 
 enable_services () {
-    grep 'samba_enable="YES"' ${RCCONF_FILE}    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
-    grep 'winbindd_enable="YES"' ${RCCONF_FILE} || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
+    grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
+    grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
 }
 
 RCDIR=/etc/rc.d
@@ -196,8 +206,8 @@ RCSAMBA_FILE=${RCDIR}/samba
 
 # Install the configuration files from the Taos project server
 # over-write the samba config and service launcher
-${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf > /dev/null
-${FETCHER} ${RCSAMBA_FILE} ${TAOS_RELEASE}/samba.sh > /dev/null
+${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf > /dev/null 2>&1
+${FETCHER} ${RCSAMBA_FILE} ${TAOS_RELEASE}/samba.sh > /dev/null 2>&1
 
 # These files must have changes merged in to them if they exist
 if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else ${FETCHER} ${KRB5CONF_FILE} ${TAOS_RELEASE}/krb5.conf > /dev/null ; fi
@@ -223,7 +233,7 @@ export SSH_AGENT_PID
 ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
 
 # Join the domain
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}"
+${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}" > /dev/null
 
 # Clear credentials
 ADMIN_PASSWD="nunya"
@@ -232,12 +242,12 @@ export ADMIN_PASSWD
 enable_services
 
 # start services
-${RCSAMBA_FILE} restart
+${RCSAMBA_FILE} restart > /dev/null
 
 counter=0
 while [ ${counter} -lt 10 ]
 do
-    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status | grep "${SHORT_DOMAIN} :" | perl -pe 's/^.*?: //')
+    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status 2>/dev/null | grep "${SHORT_DOMAIN} :" | perl -pe 's/^.*?: //')
     if [ "${WBSTATUS}" = "online" ] ; then break; fi
     counter=`expr ${counter} + 1`
     sleep 10s

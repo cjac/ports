@@ -1,0 +1,128 @@
+#!/bin/sh
+
+#
+#   Platform-independent code
+#
+
+# Change the following if releases are deployed from elsewhere
+#TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
+TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
+#DOMAIN=JNPR.NET
+DOMAIN=ESD.COLLIERTECH.ORG
+#ADMIN_USER=adm.cjac
+ADMIN_USER=cjac
+#GPG_SERVER=taospoc-util.jnpr.net
+GPG_SERVER=172.16.9.42
+SSH_USER=cjac
+PDCHOST=`dig +short _kerberos._udp.${DOMAIN} SRV | 
+         awk '{print $4}' | 
+         sed -e 's/\.$//' |
+         head -1`
+WINBIND_STARTUP_PAUSE=1s
+
+#
+#   BSD 6.3-specific code
+#
+
+PLATFORM=`uname`
+RELEASE=`uname -r`
+RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
+MARCH=`uname -m`
+FETCHER="fetch -o"
+INSTALL_ROOT=/opt/taos/samba3
+
+# PACKAGESITE is used by pkg_add -r
+PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
+export PACKAGESITE
+
+# Install dependencies - TODO: determind whether these are installed before doing so
+# UNCOMMENT ME: for pkg in heimdal cyrus-sasl ntp libiconv ; do pkg_add -r $pkg ; done
+
+# Fetch Taos's build of samba 3.5.21
+${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
+
+# cryptographically verify integrity of release package
+EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
+ACTUAL_SHA256_HASH=`sha256 samba3_i386.tgz | awk '{print $4}'`
+
+if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
+
+# UNCOMMENT ME: pkg_add samba3_${MARCH}.tgz
+
+SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
+
+#
+#  Platform indepdendent code
+#
+
+# Verify that samba was installed as expected
+EXPECTED_SAMBA_VERSION='Version 3.5.21'
+ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`
+
+if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
+if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
+
+merge_krb5conf_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+}
+
+merge_ntpconf_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/ntp.conf into ${NTPCONF_FILE} manually"
+}
+
+merge_nssconf_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/nsswitch.conf into ${NSSCONF_FILE} manually"
+}
+
+merge_ldsoconf_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/ls.so.conf into ${LDSOCONF_FILE} manually"
+}
+
+merge_pamsshd_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/sshd into ${PAMSSHD_FILE} manually"
+}
+
+merge_rcsamba_file () {
+		echo "Merge changes from ${TAOS_RELEASE}/samba.sh into ${RCSAMBA_FILE} manually"
+}
+
+
+SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
+KRB5CONF_FILE=/etc/krb5.conf
+NTPCONF_FILE=/etc/ntp.conf
+LDSOCONF_FILE=/etc/ld.so.conf
+PAMSSHD_FILE=/etc/pam.d/sshd
+NSSCONF_FILE=/etc/nsswitch.conf
+RCSAMBA_FILE=/etc/rc.d/samba
+
+# Install the configuration files from the Taos project server
+${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf
+
+if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else ${FETCHER} ${KRB5CONF_FILE} ${TAOS_RELEASE}/krb5.conf ; fi
+if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else ${FETCHER} ${NTPCONF_FILE}  ${TAOS_RELEASE}/ntp.conf ; fi
+if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else ${FETCHER} ${NSSCONF_FILE}  ${TAOS_RELEASE}/nsswitch.conf ; fi
+if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else ${FETCHER} ${LDSOCONF_FILE} ${TAOS_RELEASE}/ld.so.conf ; fi
+if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else ${FETCHER} ${PAMSSHD_FILE}  ${TAOS_RELEASE}/sshd ; fi
+if [ -e ${RCSAMBA_FILE}  ] ; then merge_rcsamba_file  ; else ${FETCHER} ${RCSAMBA_FILE}  ${TAOS_RELEASE}/samba.sh ; fi
+
+${FETCHER} /tmp/  ${TAOS_RELEASE}/samba.sh
+
+# Join the domain
+export SSH_AUTH_SOCK
+export SSH_AGENT_PID
+ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
+
+${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%${ADMIN_PASSWD}
+
+ADMIN_PASSWD="nunya"
+export ADMIN_PASSWD
+
+# start services
+${RCSAMBA_FILE} restart
+sleep ${WINBIND_STARTUP_PAUSE}
+
+# Verify winbind is functioning
+WBINFO=`${SAMBA_RUNNER} wbinfo -n ${ADMIN_USER} | grep SID_USER`
+
+if [ "${WBINFO}" != "" ] ; then echo "winbind functioning" ; else echo "winbind lookup failure." ; exit 1; fi
+

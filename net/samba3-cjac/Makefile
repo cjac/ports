@@ -5,7 +5,6 @@ PORTVERSION=	3.5.21
 CATEGORIES=	net
 MASTER_SITES=	http://phx0.colliertech.org/~cjac/src/samba3_bsd6/
 
-
 MAINTAINER=	cjac@colliertech.org
 COMMENT= backport of samba3 and dependencies to FreeBSD 6.3
 
@@ -26,6 +25,7 @@ inst: ${.CURDIR}/env
 	cp env ${PREFIX}/bin/
 	chmod ug+x ${PREFIX}/bin/env
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
+
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/libnss_winbind.so.2
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_wins.so ${PREFIX}/lib/libnss_wins.so
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/libnss_wins.so.2
@@ -39,7 +39,6 @@ inst: ${.CURDIR}/env
 	cp krb5.conf ntp.conf nsswitch.conf ld.so.conf ${PREFIX}/etc/
 	chmod u+x ${PREFIX}/etc/rc.d/samba
 	chown root:wheel ${PREFIX}/etc/rc.d/samba
-
 
 install: inst
 

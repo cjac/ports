@@ -10,18 +10,18 @@ DOMAIN=ESD.COLLIERTECH.ORG
 ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
+WINBIND_STARTUP_PAUSE=60s
+EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
-         grep -v '^;' |
-         awk '{print $4}' | 
-         sed -e 's/\.$//'`
+grep -v '^;' |
+awk '{print $4}' | 
+sed -e 's/\.$//'`
 PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
 NTPHOST=${PDCHOST}
-WINBIND_STARTUP_PAUSE=60s
 
 PERL=`which perl`
 PERL_VERSION=`perl -e 'print "$]\n"'`
-
 
 #
 #   FreeBSD 6.3-specific code
@@ -42,17 +42,20 @@ PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MAR
 export PACKAGESITE
 
 # Install dependencies - TODO: determind whether these are installed before doing so
-# UNCOMMENT ME: for pkg in heimdal cyrus-sasl ntp libiconv ; do pkg_add -r $pkg ; done
+for pkg in heimdal cyrus-sasl ntp libiconv
+do
+		pkg_status | grep "^$pkg" || \
+				pkg_add -r $pkg
+done
 
 # Fetch Taos's build of samba 3.5.21
 test -f samba3_${MARCH}.tgz
 if [ $? != 0 ]
 then
-  ${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
+		${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
 fi
 
 # cryptographically verify integrity of release package
-EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 ACTUAL_SHA256_HASH=`sha256 samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
@@ -88,24 +91,25 @@ merge_krb5conf_file () {
     grep 'dns_lookup_realm[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
-	cat ${TEMP_FILE} | sed "s/dns_lookup_realm[ 	]*=.\+/ dns_lookup_realm = true/" > ${TEMP_FILE}.1
-	mv ${TEMP_FILE}.1 ${TEMP_FILE}
-	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+				cat ${TEMP_FILE} | sed "s/dns_lookup_realm[ 	]*=.\+/ dns_lookup_realm = true/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     else
-	# TODO: put dns_lookup_realm under [libdefaults]
-	echo "Merge dns_lookup_realm from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
-    fi
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+	  fi
 
     echo "-- Enabling dns_lookup_kdc"
     grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
-	cat ${TEMP_FILE} | sed "s/dns_lookup_kdc[ 	]*=.\+/ dns_lookup_kdc = true/" > ${TEMP_FILE}.1
-	mv ${TEMP_FILE}.1 ${TEMP_FILE}
-	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+				cat ${TEMP_FILE} | sed "s/dns_lookup_kdc[ 	]*=.\+/ dns_lookup_kdc = true/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     else
-	# TODO: put dns_lookup_kdc under [libdefaults]
-	echo "Merge dns_lookup_kdc from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+
     fi
     cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
 
@@ -113,32 +117,32 @@ merge_krb5conf_file () {
     grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
-	cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
-	cat ${TEMP_FILE} | sed "s/default_realm[ 	]*=.\+$/default_realm = ${DOMAIN}/" > ${TEMP_FILE}.1
-	mv ${TEMP_FILE}.1 ${TEMP_FILE}
-	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+				cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
+				cat ${TEMP_FILE} | sed "s/default_realm[ 	]*=.\+$/default_realm = ${DOMAIN}/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     else
-	# TODO: put default_realm under [libdefaults]
-	echo "Merge default_realm from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     fi
 
     echo "-- Enabling ${DOMAIN} realm"
     grep '\[realms\]' ${TEMP_FILE} > /dev/null
     if [ $? -eq 0 ]
     then
-	# TODO: put default_realm under [libdefaults]
-	echo "Merge ${DOMAIN} [realms] entry from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
     else
-	cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
-	echo "\n\n[realms]\n${DOMAIN} = {" >> ${TEMP_FILE}
-	for kdc in ${PDCHOSTS}
-	do
-	    echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
-	    echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
-	done
-	echo "}\n\n" >> ${TEMP_FILE}
-	
-	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}	
+				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+				echo "\n\n[realms]\n${DOMAIN} = {" >> ${TEMP_FILE}
+				for kdc in ${PDCHOSTS}
+				do
+						echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
+						echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
+				done
+				echo "}\n\n" >> ${TEMP_FILE}
+				
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}	
     fi
 
     rm ${TEMP_FILE}
@@ -156,7 +160,7 @@ merge_ldsoconf_file () {
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
-	grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+				grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
     RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
     grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
@@ -202,8 +206,8 @@ if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else ${FETCHER} ${PAMSSH
 # Install libnss_winbind.so and libnss_wins.so
 for nss_driver in winbind wins
 do
-  cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
-  ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
+		cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
+		ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
 done
 
 # Synchronize clocks

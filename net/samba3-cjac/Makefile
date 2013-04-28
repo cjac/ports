@@ -25,7 +25,6 @@ inst: ${.CURDIR}/env
 	cp env ${PREFIX}/bin/
 	chmod ug+x ${PREFIX}/bin/env
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
-
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/libnss_winbind.so.2
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_wins.so ${PREFIX}/lib/libnss_wins.so
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/libnss_wins.so.2

@@ -5,23 +5,26 @@
 #
 
 # Change the following if releases are deployed from elsewhere
-#TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
 TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
-#DOMAIN=JNPR.NET
 DOMAIN=ESD.COLLIERTECH.ORG
-#ADMIN_USER=adm.cjac
 ADMIN_USER=cjac
-#GPG_SERVER=taospoc-util.jnpr.net
-GPG_SERVER=172.16.9.42
+GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
-PDCHOST=`dig +short _kerberos._udp.${DOMAIN} SRV | 
+
+PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
+         grep -v '^;' |
          awk '{print $4}' | 
-         sed -e 's/\.$//' |
-         head -1`
-WINBIND_STARTUP_PAUSE=1s
+         sed -e 's/\.$//'`
+PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
+NTPHOST=${PDCHOST}
+WINBIND_STARTUP_PAUSE=60s
+
+PERL=`which perl`
+PERL_VERSION=`perl -e 'print "$]\n"'`
+
 
 #
-#   BSD 6.3-specific code
+#   FreeBSD 6.3-specific code
 #
 
 PLATFORM=`uname`
@@ -30,6 +33,9 @@ RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
 FETCHER="fetch -o"
 INSTALL_ROOT=/opt/taos/samba3
+LD_SEARCH_PATH=${INSTALL_ROOT}
+LDCONFIG="ldconfig -m"
+NTPDATE=ntpdate
 
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
@@ -39,12 +45,15 @@ export PACKAGESITE
 # UNCOMMENT ME: for pkg in heimdal cyrus-sasl ntp libiconv ; do pkg_add -r $pkg ; done
 
 # Fetch Taos's build of samba 3.5.21
-${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
+test -f samba3_${MARCH}.tgz
+if [ $? != 0 ]
+then
+  ${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz
+fi
 
 # cryptographically verify integrity of release package
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
-ACTUAL_SHA256_HASH=`sha256 samba3_i386.tgz | awk '{print $4}'`
-
+ACTUAL_SHA256_HASH=`sha256 samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
 # UNCOMMENT ME: pkg_add samba3_${MARCH}.tgz
@@ -62,67 +71,165 @@ ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`
 if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
 if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
 
+BACKUP_DIR="${PWD}/Backup_Files"
+TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
+test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
+
 merge_krb5conf_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+    # Work on Kerberos
+    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
+
+    echo "- Processing ${KRB5CONF_FILE}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
+
+    cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
+
+    echo "-- Enabling dns_lookup_realm"
+    grep 'dns_lookup_realm[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+	cat ${TEMP_FILE} | sed "s/dns_lookup_realm[ 	]*=.\+/ dns_lookup_realm = true/" > ${TEMP_FILE}.1
+	mv ${TEMP_FILE}.1 ${TEMP_FILE}
+	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+	# TODO: put dns_lookup_realm under [libdefaults]
+	echo "Merge dns_lookup_realm from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+    fi
+
+    echo "-- Enabling dns_lookup_kdc"
+    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+	cat ${TEMP_FILE} | sed "s/dns_lookup_kdc[ 	]*=.\+/ dns_lookup_kdc = true/" > ${TEMP_FILE}.1
+	mv ${TEMP_FILE}.1 ${TEMP_FILE}
+	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+	# TODO: put dns_lookup_kdc under [libdefaults]
+	echo "Merge dns_lookup_kdc from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+    fi
+    cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
+
+    echo "-- Enabling default_realm"
+    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+	cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
+	cat ${TEMP_FILE} | sed "s/default_realm[ 	]*=.\+$/default_realm = ${DOMAIN}/" > ${TEMP_FILE}.1
+	mv ${TEMP_FILE}.1 ${TEMP_FILE}
+	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+	# TODO: put default_realm under [libdefaults]
+	echo "Merge default_realm from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+    fi
+
+    echo "-- Enabling ${DOMAIN} realm"
+    grep '\[realms\]' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+	# TODO: put default_realm under [libdefaults]
+	echo "Merge ${DOMAIN} [realms] entry from ${TAOS_RELEASE}/krb5.conf into ${KRB5CONF_FILE} manually"
+    else
+	cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+	echo "\n\n[realms]\n${DOMAIN} = {" >> ${TEMP_FILE}
+	for kdc in ${PDCHOSTS}
+	do
+	    echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
+	    echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
+	done
+	echo "}\n\n" >> ${TEMP_FILE}
+	
+	cp -f ${TEMP_FILE} ${KRB5CONF_FILE}	
+    fi
+
+    rm ${TEMP_FILE}
 }
 
 merge_ntpconf_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/ntp.conf into ${NTPCONF_FILE} manually"
+    echo "Merge changes from ${TAOS_RELEASE}/ntp.conf into ${NTPCONF_FILE} manually"
 }
 
 merge_nssconf_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/nsswitch.conf into ${NSSCONF_FILE} manually"
+    echo "Merge changes from ${TAOS_RELEASE}/nsswitch.conf into ${NSSCONF_FILE} manually"
 }
 
 merge_ldsoconf_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/ls.so.conf into ${LDSOCONF_FILE} manually"
+    # update system library search paths and ensure that it is updated on boot
+    for LIBPATH in ${LD_SEARCH_PATH}
+    do
+	grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+    done
+    RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
+    grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+    ${LDCONFIG} ${LDSOCONF_FILE}
 }
 
 merge_pamsshd_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/sshd into ${PAMSSHD_FILE} manually"
+    echo "Merge changes from ${TAOS_RELEASE}/sshd into ${PAMSSHD_FILE} manually"
 }
 
-merge_rcsamba_file () {
-		echo "Merge changes from ${TAOS_RELEASE}/samba.sh into ${RCSAMBA_FILE} manually"
+enable_services () {
+    echo samba_enable="YES"    >> ${RCCONF_FILE}
+    echo winbindd_enable="YES" >> ${RCCONF_FILE}
 }
 
+RCDIR=/etc/rc.d
+RCLOCAL_FILE=/etc/rc.local
+RCCONF_FILE=/etc/rc.conf
+
+KRB5CONF_DIR=/etc
+KRB5CONF_BASENAME=krb5.conf
+KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
 
 SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
-KRB5CONF_FILE=/etc/krb5.conf
 NTPCONF_FILE=/etc/ntp.conf
 LDSOCONF_FILE=/etc/ld.so.conf
 PAMSSHD_FILE=/etc/pam.d/sshd
 NSSCONF_FILE=/etc/nsswitch.conf
-RCSAMBA_FILE=/etc/rc.d/samba
+RCSAMBA_FILE=${RCDIR}/samba
 
 # Install the configuration files from the Taos project server
-${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf
+# over-write the samba config and service launcher
+${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf > /dev/null
+${FETCHER} ${RCSAMBA_FILE} ${TAOS_RELEASE}/samba.sh > /dev/null
 
-if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else ${FETCHER} ${KRB5CONF_FILE} ${TAOS_RELEASE}/krb5.conf ; fi
-if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else ${FETCHER} ${NTPCONF_FILE}  ${TAOS_RELEASE}/ntp.conf ; fi
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else ${FETCHER} ${NSSCONF_FILE}  ${TAOS_RELEASE}/nsswitch.conf ; fi
-if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else ${FETCHER} ${LDSOCONF_FILE} ${TAOS_RELEASE}/ld.so.conf ; fi
-if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else ${FETCHER} ${PAMSSHD_FILE}  ${TAOS_RELEASE}/sshd ; fi
-if [ -e ${RCSAMBA_FILE}  ] ; then merge_rcsamba_file  ; else ${FETCHER} ${RCSAMBA_FILE}  ${TAOS_RELEASE}/samba.sh ; fi
+# These files must have changes merged in to them if they exist
+if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else ${FETCHER} ${KRB5CONF_FILE} ${TAOS_RELEASE}/krb5.conf > /dev/null ; fi
+if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else ${FETCHER} ${NTPCONF_FILE}  ${TAOS_RELEASE}/ntp.conf > /dev/null ; fi
+if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else ${FETCHER} ${NSSCONF_FILE}  ${TAOS_RELEASE}/nsswitch.conf > /dev/null ; fi
+if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else ${FETCHER} ${LDSOCONF_FILE} ${TAOS_RELEASE}/ld.so.conf > /dev/null ; fi
+if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else ${FETCHER} ${PAMSSHD_FILE}  ${TAOS_RELEASE}/sshd > /dev/null ; fi
 
-${FETCHER} /tmp/  ${TAOS_RELEASE}/samba.sh
+# Install libnss_winbind.so and libnss_wins.so
+for nss_driver in winbind wins
+do
+  cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
+  ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
+done
 
-# Join the domain
+# Synchronize clocks
+${NTPDATE} ${NTPHOST} > /dev/null
+
+# Secure credentials
+eval `SHELL=/bin/sh ./keychain -q --eval`
 export SSH_AUTH_SOCK
 export SSH_AGENT_PID
 ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
 
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%${ADMIN_PASSWD}
+# Join the domain
+${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}"
 
+# Clear credentials
 ADMIN_PASSWD="nunya"
 export ADMIN_PASSWD
 
+enable_services
+
 # start services
-${RCSAMBA_FILE} restart
+${RCSAMBA_FILE} restart > /dev/null
 sleep ${WINBIND_STARTUP_PAUSE}
 
 # Verify winbind is functioning
-WBINFO=`${SAMBA_RUNNER} wbinfo -n ${ADMIN_USER} | grep SID_USER`
+WBINFO=`${SAMBA_RUNNER} wbinfo -n ${SSH_USER} | grep SID_USER`
 
 if [ "${WBINFO}" != "" ] ; then echo "winbind functioning" ; else echo "winbind lookup failure." ; exit 1; fi
 

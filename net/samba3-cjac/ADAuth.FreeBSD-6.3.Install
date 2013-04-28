@@ -7,9 +7,11 @@
 # Change the following if releases are deployed from elsewhere
 TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
 DOMAIN=ESD.COLLIERTECH.ORG
+SHORT_DOMAIN=ESD
 ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
+WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
@@ -43,8 +45,8 @@ export PACKAGESITE
 # Install dependencies - TODO: determind whether these are installed before doing so
 for pkg in heimdal cyrus-sasl ntp libiconv
 do
-		pkg_status | grep "^$pkg" || \
-				pkg_add -r $pkg
+    pkg_info | grep "^$pkg" || \
+	pkg_add -r $pkg
 done
 
 # Fetch Taos's build of samba 3.5.21
@@ -58,7 +60,7 @@ fi
 ACTUAL_SHA256_HASH=`sha256 samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-# UNCOMMENT ME: pkg_add samba3_${MARCH}.tgz
+pkg_add samba3_${MARCH}.tgz
 
 SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 
@@ -160,7 +162,7 @@ merge_ldsoconf_file () {
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
-				grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+	grep ${LIBPATH} ${LDSOCONF_FILE} || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
     RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
     grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
@@ -173,8 +175,8 @@ merge_pamsshd_file () {
 }
 
 enable_services () {
-    echo samba_enable="YES"    >> ${RCCONF_FILE}
-    echo winbindd_enable="YES" >> ${RCCONF_FILE}
+    grep 'samba_enable="YES"' ${RCCONF_FILE}    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
+    grep 'winbindd_enable="YES"' ${RCCONF_FILE} || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
 }
 
 RCDIR=/etc/rc.d
@@ -230,8 +232,18 @@ export ADMIN_PASSWD
 enable_services
 
 # start services
-${RCSAMBA_FILE} restart > /dev/null
-${SAMBA_RUNNER} wbinfo --ping-dc
+${RCSAMBA_FILE} restart
+
+counter=0
+while [ ${counter} -lt 10 ]
+do
+    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status | grep "${SHORT_DOMAIN} :" | perl -pe 's/^.*?: //')
+    if [ "${WBSTATUS}" = "online" ] ; then break; fi
+    counter=`expr ${counter} + 1`
+    sleep 10s
+done
+
+sleep ${WINBIND_WAIT_TIME}
 
 # Verify winbind is functioning
 WBINFO=`${SAMBA_RUNNER} wbinfo -n ${SSH_USER} | grep SID_USER`

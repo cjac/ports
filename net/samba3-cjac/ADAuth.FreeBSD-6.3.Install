@@ -13,6 +13,7 @@ GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
+DRYRUN=0
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
@@ -94,9 +95,10 @@ BACKUP_DIR="${PWD}/Backup_Files"
 TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
 
+TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
+
 merge_krb5conf_file () {
     # Work on Kerberos
-    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
 
     cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
 
@@ -165,8 +167,6 @@ merge_ntpconf_file () {
 }
 
 merge_nssconf_file () {
-    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
-
 		${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${NSSCONF_FILE}
 }
@@ -183,8 +183,6 @@ merge_ldsoconf_file () {
 }
 
 merge_pamsshd_file () {
-    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
-
 		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
 }
@@ -210,16 +208,41 @@ NSSCONF_FILE=/etc/nsswitch.conf
 RCSAMBA_FILE=${RCDIR}/samba
 
 # Install the configuration files from the Taos project server
+
+if [ ! -e smb.conf      ] ; then ${FETCHER} smb.conf      ${TAOS_RELEASE}/smb.conf      > /dev/null ; fi
+if [ ! -e samba.sh      ] ; then ${FETCHER} samba.sh      ${TAOS_RELEASE}/samba.sh      > /dev/null ; fi
+if [ ! -e krb5.conf     ] ; then ${FETCHER} krb5.conf     ${TAOS_RELEASE}/krb5.conf     > /dev/null ; fi
+if [ ! -e ntp.conf      ] ; then ${FETCHER} ntp.conf      ${TAOS_RELEASE}/ntp.conf      > /dev/null ; fi
+if [ ! -e nsswitch.conf ] ; then ${FETCHER} nsswitch.conf ${TAOS_RELEASE}/nsswitch.conf > /dev/null ; fi
+if [ ! -e ld.so.conf    ] ; then ${FETCHER} ld.so.conf    ${TAOS_RELEASE}/ld.so.conf    > /dev/null ; fi
+if [ ! -e sshd          ] ; then ${FETCHER} sshd          ${TAOS_RELEASE}/sshd          > /dev/null ; fi
+
+if [ ${DRYRUN} = 1 ]
+then
+		for conffile in $SMBCONF_FILE $RCSAMBA_FILE $KRB5CONF_FILE $NTPCONF_FILE $NSSCONF_FILE $LDSOCONF_FILE $PAMSSHD_FILE
+		do
+				test -f ${conffile} && cp ${conffile} ${conffile}.dryrun
+		done
+fi
+
+test ${DRYRUN} = 1 && SMBCONF_FILE="${SMBCONF_FILE}.dryrun"
+test ${DRYRUN} = 1 && RCSAMBA_FILE="${RCSAMBA_FILE}.dryrun"
+test ${DRYRUN} = 1 && KRB5CONF_FILE="${KRB5CONF_FILE}.dryrun"
+test ${DRYRUN} = 1 && NTPCONF_FILE="${NTPCONF_FILE}.dryrun"
+test ${DRYRUN} = 1 && NSSCONF_FILE="${NSSCONF_FILE}.dryrun"
+test ${DRYRUN} = 1 && LDSOCONF_FILE="${LDSOCONF_FILE}.dryrun"
+test ${DRYRUN} = 1 && PAMSSHD_FILE="${PAMSSHD_FILE}.dryrun"
+
 # over-write the samba config and service launcher
-${FETCHER} ${SMBCONF_FILE} ${TAOS_RELEASE}/smb.conf > /dev/null 2>&1
-${FETCHER} ${RCSAMBA_FILE} ${TAOS_RELEASE}/samba.sh > /dev/null 2>&1
+cp smb.conf ${SMBCONF_FILE}
+cp samba.sh ${RCSAMBA_FILE}
 
 # These files must have changes merged in to them if they exist
-if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else ${FETCHER} ${KRB5CONF_FILE} ${TAOS_RELEASE}/krb5.conf > /dev/null ; fi
-if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else ${FETCHER} ${NTPCONF_FILE}  ${TAOS_RELEASE}/ntp.conf > /dev/null ; fi
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else ${FETCHER} ${NSSCONF_FILE}  ${TAOS_RELEASE}/nsswitch.conf > /dev/null ; fi
-if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else ${FETCHER} ${LDSOCONF_FILE} ${TAOS_RELEASE}/ld.so.conf > /dev/null ; fi
-if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else ${FETCHER} ${PAMSSHD_FILE}  ${TAOS_RELEASE}/sshd > /dev/null ; fi
+if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
+if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
+if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
+if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
 
 # Install libnss_winbind.so and libnss_wins.so
 for nss_driver in winbind wins

@@ -108,7 +108,7 @@ sub merge_krb5conf_file {
 	my $output;
 
 	foreach $section ( @section_order ){
-		next unless exists $section_value{$section};
+		next unless exists $section_value{$section} || $section eq 'realms';
 
 		@lines = @{$section_value{$section}};
 
@@ -137,6 +137,7 @@ sub merge_krb5conf_file {
 					$default_realm_set = 1;
 					$logger->debug( "default_realm processed" );
 				}
+
 
 				$section_content .= $line;
 			}

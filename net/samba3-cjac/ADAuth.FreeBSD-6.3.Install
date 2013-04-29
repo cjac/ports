@@ -58,22 +58,23 @@ NTPDATE=ntpdate
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
 export PACKAGESITE
 
+test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
+
 # Install dependencies - TODO: determind whether these are installed before doing so
 for pkg in heimdal cyrus-sasl ntp libiconv
 do
-    pkg_info | grep "^$pkg" >/dev/null || \
-	pkg_add -r $pkg
+
+    test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
+    test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
+    test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz
+    pkg_info | grep "^$pkg" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz
 done
 
 # Fetch Taos's build of samba 3.5.21
-test -f samba3_${MARCH}.tgz
-if [ $? != 0 ]
-then
-		${FETCHER} samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz > /dev/null
-fi
+test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz > /dev/null
 
 # cryptographically verify integrity of release package
-ACTUAL_SHA256_HASH=`sha256 samba3_${MARCH}.tgz | awk '{print $4}'`
+ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
 pkg_add samba3_${MARCH}.tgz

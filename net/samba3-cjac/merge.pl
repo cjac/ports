@@ -108,7 +108,7 @@ sub merge_krb5conf_file {
 	my $output;
 
 	foreach $section ( @section_order ){
-		$section_value{$section} = [] if $section eq 'realms';
+		$section_value{$section} = [] if( $section eq 'realms' && !defined $section_value{$section} );
 		next unless exists $section_value{$section};
 
 		@lines = @{$section_value{$section}};

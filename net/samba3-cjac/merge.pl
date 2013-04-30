@@ -200,6 +200,8 @@ sub merge_pamconf_file {
 	push(@section_order, $section);
 	my %section_value = ( header => [] );
 	while(my $line = shift(@lines)){
+		next if $line =~ /^\s*$/;
+
 		if($line =~ /^\s*#?\s*(account|auth|password|session)/){
 			unless( $section eq $1 ){
 				$logger->debug("section changed to [$section]");
@@ -209,7 +211,8 @@ sub merge_pamconf_file {
 		}
 
 		if($line =~ /^#/){
-			push(@{$section_value{$section}}, $line);
+			push(@{$section_value{$section}}, $line)
+				unless $line =~ /^#\s*$section\s*$/;
 			next;
 		}
 
@@ -236,6 +239,7 @@ sub merge_pamconf_file {
 	unshift(@{$section_value{'password'}}, "password        sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
 
 	foreach my $s (@section_order){
+		unshift(@{$section_value{$s}}, "# $s\n");
 		push(@{$section_value{$s}}, "\n");
 	}
 
@@ -311,7 +315,7 @@ sub merge_nssconf_file {
 				push(@services, $service);
 			}
 
-			push(@services, $svc);
+			push(@services, $svc) unless $svc eq 'wins'; # wins support was not correctly built for freebsd
 
 			$output .= "$sec: " . join( ' ', @services ) . "\n";
 

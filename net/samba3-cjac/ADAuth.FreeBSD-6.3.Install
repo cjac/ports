@@ -14,6 +14,7 @@ SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 DRYRUN=0
+INSTALL_DEPS=0
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
@@ -63,11 +64,11 @@ test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 # Install dependencies - TODO: determind whether these are installed before doing so
 for pkg in heimdal cyrus-sasl ntp libiconv
 do
-
+    test ${INSTALL_DEPS} = 1 || continue;
     test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
     test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
     test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz
-    pkg_info | grep "^$pkg" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz
+    pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz
 done
 
 # Fetch Taos's build of samba 3.5.21
@@ -77,7 +78,7 @@ test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE
 ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_add samba3_${MARCH}.tgz
+pkg_info | grep -E '^samba3 +this' >/dev/null || pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz
 
 SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 
@@ -96,11 +97,9 @@ BACKUP_DIR="${PWD}/Backup_Files"
 TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
 
-TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
-
 merge_krb5conf_file () {
     # Work on Kerberos
-
+    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
     cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
 
     cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
@@ -165,25 +164,36 @@ merge_krb5conf_file () {
 
 merge_ntpconf_file () {
     # TODO: implement merge_ntpconf_file in merge.pl
+    TEMP_FILE="/tmp/${NTPCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${NTPCONF_BASENAME}.${TIMESTAMP}
+
 }
 
 merge_nssconf_file () {
+    TEMP_FILE="/tmp/${NSSCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
+
 		${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${NSSCONF_FILE}
 }
 
 merge_ldsoconf_file () {
+    TEMP_FILE="/tmp/${LDSOCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${LDSOCONF_BASENAME}.${TIMESTAMP}
+
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
 				grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
     RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-    grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+    test ${DRYRUN} = 0 && grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
     ${LDCONFIG} ${LDSOCONF_FILE}
 }
 
 merge_pamsshd_file () {
+    TEMP_FILE="/tmp/${PAMSSHD_BASENAME}.${TIMESTAMP}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${PAMSSHD_BASENAME}.${TIMESTAMP}
 		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
 }
@@ -199,14 +209,19 @@ RCCONF_FILE=/etc/rc.conf
 
 KRB5CONF_DIR=/etc
 KRB5CONF_BASENAME=krb5.conf
+NTPCONF_BASENAME=ntp.conf
+LDSOCONF_BASENAME=ld.so.conf
+PAMSSHD_BASENAME=sshd
+NSSCONF_BASENAME=nsswitch.conf
 KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
 
 SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
-NTPCONF_FILE=/etc/ntp.conf
-LDSOCONF_FILE=/etc/ld.so.conf
-PAMSSHD_FILE=/etc/pam.d/sshd
-NSSCONF_FILE=/etc/nsswitch.conf
 RCSAMBA_FILE=${RCDIR}/samba
+NTPCONF_FILE=/etc/${NTPCONF_BASENAME}
+LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
+PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
+NSSCONF_FILE=/etc/${NSSCONF_BASENAME}
+
 
 # Install the configuration files from the Taos project server
 

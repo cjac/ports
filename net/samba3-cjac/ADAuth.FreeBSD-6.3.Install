@@ -63,8 +63,8 @@ test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 ORIGINAL_PERL=`which perl`
 
 # if not, add it to the dependency list
-test ${ORIGINAL_PERL} = '' && DEP_PKG_LIST="${DEP_PKG_LIST} perl"
-test ${ORIGINAL_PERL} = '' && echo "installing perl temporarily"
+test "${ORIGINAL_PERL}x" = 'x' && DEP_PKG_LIST="${DEP_PKG_LIST} perl"
+test "${ORIGINAL_PERL}x" = 'x' && echo "installing perl temporarily"
 
 # Install dependencies - TODO: determind whether these are installed before doing so
 for pkg in ${DEP_PKG_LIST}
@@ -307,7 +307,7 @@ export ADMIN_PASSWD
 enable_services
 
 # start services
-${RCSAMBA_FILE} restart > /dev/null
+${RCSAMBA_FILE} restart > /dev/null 2>&1
 
 counter=0
 while [ ${counter} -lt 10 ]
@@ -316,13 +316,15 @@ do
     if [ "${WBSTATUS}" = "online" ] ; then break; fi
     counter=`expr ${counter} + 1`
     sleep 10s
-    test ${WBSTATUS} = '' && WBSTATUS=offline
 done
+
+test "${WBSTATUS}x" = "x" && WBSTATUS=offline
 echo "winbind ${WBSTATUS}"
 
 # clean up perl if it was not originally installed
-if [ ${ORIGINAL_PERL} != ${PERL} ]
+if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]
 then
   echo "removing perl"
-  pkg_info | grep perl > /dev/null && pkg_delete perl > /dev/null 2>&1
+  PKG_NAME=`pkg_info | grep '^perl-5' | awk '{print $1}'`
+  test "${PKG_NAME}x" = "x" || pkg_delete ${PKG_NAME} > /dev/null 2>&1
 fi

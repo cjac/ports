@@ -14,7 +14,7 @@ SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
 DRYRUN=0
-INSTALL_DEPS=0
+INSTALL_DEPS=1
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
@@ -23,14 +23,11 @@ sed -e 's/\.$//'`
 PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
 NTPHOST=${PDCHOST}
 
-PERL=`which perl`
-PERL_VERSION=`perl -e 'print "$]\n"'`
-
 # create somewhere for log4perl to dump its logs
 if [ ! -d log ] ; then mkdir log ; fi
 chmod a+rwx log
 
-cat > log4perl.conf <<EOF
+test -f log4perl.conf || cat > log4perl.conf <<EOF
 log4perl.rootLogger=DEBUG, LOGFILE
 
 log4perl.appender.LOGFILE=Log::Log4perl::Appender::File
@@ -51,9 +48,10 @@ RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
 FETCHER="fetch -o"
 INSTALL_ROOT=/opt/taos/samba3
-LD_SEARCH_PATH=${INSTALL_ROOT}
+LD_SEARCH_PATH="/lib /usr/lib ${INSTALL_ROOT}/lib"
 LDCONFIG="ldconfig -m"
 NTPDATE=ntpdate
+DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv'
 
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
@@ -61,14 +59,23 @@ export PACKAGESITE
 
 test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 
+# Check if perl is originally installed
+ORIGINAL_PERL=`which perl`
+
+# if not, add it to the dependency list
+test ${ORIGINAL_PERL} = '' && DEP_PKG_LIST="${DEP_PKG_LIST} perl"
+test ${ORIGINAL_PERL} = '' && echo "installing perl temporarily"
+
 # Install dependencies - TODO: determind whether these are installed before doing so
-for pkg in heimdal cyrus-sasl ntp libiconv
+for pkg in ${DEP_PKG_LIST}
 do
-    test ${INSTALL_DEPS} = 1 || continue;
+    # install perl independent of INSTALL_DEPS being set
+    test ${pkg} != 'perl' && test ${INSTALL_DEPS} = 0 && continue;
+
     test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
     test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
     test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz
-    pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz
+    pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz >/dev/null 2>&1
 done
 
 # Fetch Taos's build of samba 3.5.21
@@ -78,13 +85,21 @@ test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE
 ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +this' >/dev/null || pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz
+pkg_info | grep -E '^samba3 +this' >/dev/null || pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
+
+for dir in log run cache lib
+do
+    mkdir -p ${INSTALL_ROOT}/var/${dir}/samba
+done
 
 SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 
 #
 #  Platform indepdendent code
 #
+
+PERL=`which perl`
+PERL_VERSION=`${PERL} -e 'print "$]\n"'`
 
 # Verify that samba was installed as expected
 EXPECTED_SAMBA_VERSION='Version 3.5.21'
@@ -173,8 +188,8 @@ merge_nssconf_file () {
     TEMP_FILE="/tmp/${NSSCONF_BASENAME}.${TIMESTAMP}"
     cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
 
-		${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
-		cp -f ${TEMP_FILE} ${NSSCONF_FILE}
+    ${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
+    cp -f ${TEMP_FILE} ${NSSCONF_FILE}
 }
 
 merge_ldsoconf_file () {
@@ -184,11 +199,8 @@ merge_ldsoconf_file () {
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
-				grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+	grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
-    RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-    test ${DRYRUN} = 0 && grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
-    ${LDCONFIG} ${LDSOCONF_FILE}
 }
 
 merge_pamsshd_file () {
@@ -222,6 +234,19 @@ LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
 PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
 NSSCONF_FILE=/etc/${NSSCONF_BASENAME}
 
+# Install libnss_winbind.so and libnss_wins.so
+for nss_driver in winbind wins
+do
+    cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
+    ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
+done
+
+# Install pam_winbind.so and pam_smbpass.so
+for pam_driver in winbind smbpass
+do
+    cp -f ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so /usr/lib/
+    ln -sf /usr/lib/pam_${pam_driver}.so /usr/lib/pam_${pam_driver}.so.3
+done
 
 # Install the configuration files from the Taos project server
 
@@ -260,20 +285,16 @@ if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${
 if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
 if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
 
-# Install libnss_winbind.so and libnss_wins.so
-for nss_driver in winbind wins
-do
-		cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
-		ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
-done
+# update dynamic library symbols
+RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
+test ${DRYRUN} = 0 && grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+${LDCONFIG} ${LDSOCONF_FILE}
 
 # Synchronize clocks
 ${NTPDATE} ${NTPHOST} > /dev/null
 
 # Secure credentials
 eval `SHELL=/bin/sh ./keychain -q --eval`
-export SSH_AUTH_SOCK
-export SSH_AGENT_PID
 ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
 
 # Join the domain
@@ -291,16 +312,17 @@ ${RCSAMBA_FILE} restart > /dev/null
 counter=0
 while [ ${counter} -lt 10 ]
 do
-    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status 2>/dev/null | grep "${SHORT_DOMAIN} :" | perl -pe 's/^.*?: //')
+    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status 2>/dev/null | grep "${SHORT_DOMAIN} :" | ${PERL} -pe 's/^.*?: //')
     if [ "${WBSTATUS}" = "online" ] ; then break; fi
     counter=`expr ${counter} + 1`
     sleep 10s
+    test ${WBSTATUS} = '' && WBSTATUS=offline
 done
+echo "winbind ${WBSTATUS}"
 
-sleep ${WINBIND_WAIT_TIME}
-
-# Verify winbind is functioning
-WBINFO=`${SAMBA_RUNNER} wbinfo -n ${SSH_USER} | grep SID_USER`
-
-if [ "${WBINFO}" != "" ] ; then echo "winbind functioning" ; else echo "winbind lookup failure." ; exit 1; fi
-
+# clean up perl if it was not originally installed
+if [ ${ORIGINAL_PERL} != ${PERL} ]
+then
+  echo "removing perl"
+  pkg_info | grep perl > /dev/null && pkg_delete perl > /dev/null 2>&1
+fi

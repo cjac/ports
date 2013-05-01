@@ -232,11 +232,11 @@ sub merge_pamconf_file {
 		$section_value{$s} = [grep { $_ !~ /pam_winbind/ } @{$section_value{$s}}];
 	}
 
-	push(@{$section_value{'auth'}},        "auth            sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
-	push(@{$section_value{'account'}},     "account         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
-	push(@{$section_value{'session'}},     "session         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so mkhomedir\n");
-	push(@{$section_value{'session'}},     "session         sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so\n");
-	unshift(@{$section_value{'password'}}, "password        sufficient      ${INSTALL_ROOT}/lib/security/pam_winbind.so try_first_pass\n");
+	push(@{$section_value{'auth'}},        "auth            sufficient      pam_winbind.so          try_first_pass\n");
+	push(@{$section_value{'account'}},     "account         sufficient      pam_winbind.so          try_first_pass\n");
+#	push(@{$section_value{'session'}},     "session         sufficient      pam_winbind.so          mkhomedir\n");
+	push(@{$section_value{'session'}},     "session         sufficient      pam_winbind.so\n");
+	unshift(@{$section_value{'password'}}, "password        sufficient      pam_winbind.so          try_first_pass\n");
 
 	foreach my $s (@section_order){
 		unshift(@{$section_value{$s}}, "# $s\n");
@@ -269,59 +269,33 @@ sub merge_nssconf_file {
 	my @lines = <$fh>;
 	close($fh);
 
-	my @sections = qw(passwd group shadow hosts networks protocols services ethers rpc netgroup shells);
+	my @sections = qw(passwd group);
 
 	my $orlist = join('|', @sections);
-	my $section_regex = qr{^($orlist)(_compat)?:};
+	my $section_regex = qr{^($orlist):};
+
+	unless( -f "/lib/libnss_winbind.so" ){
+	    my $message = "missing /lib/libnss_winbind.so - copy from ${INSTALL_ROOT}/lib/libnss_winbind.so";
+	    print( $message );
+	    $logger->error( $message );
+	}
+
+	unless( -f "/lib/libnss_winbind.so.2" ){
+	    my $message = "missing /lib/libnss_winbind.so.2 - symlink from /lib/libnss_winbind.so";
+	    print( $message );
+	    $logger->error( $message );
+	}
 
 	my $output = '';
 	while(my $line = shift(@lines)){
-		if($line =~ $section_regex){
-			chomp($line);
+	    if($line =~ $section_regex){
+		my $section = $1;
 
-			my $section = $1;
-			my $svc = 'wins';
+		$output .= "$section: files winbind nis\n";
 
-			my($sec, @svcs) = split(/\s+/,$line);
-			$sec =~ s/:$//;
-
-			if($section eq 'passwd' || $section eq 'group'){
-				$svc = 'winbind';
-			}
-
-			$logger->debug("injecting $svc into $sec");
-
-			unless( -f "/lib/libnss_$svc.so" ){
-				my $message = "missing /lib/libnss_$svc.so - copy from ${INSTALL_ROOT}/lib/libnss_$svc.so";
-				print( $message );
-				$logger->error( $message );
-			}
-
-			unless( -f "/lib/libnss_$svc.so.2" ){
-				my $message = "missing /lib/libnss_$svc.so.2 - symlink from /lib/libnss_$svc.so";
-				print( $message );
-				$logger->error( $message );
-			}
-
-			my @services;
-			while ( my $service = shift( @svcs ) ) {
-				if ($service =~ /\[/) {
-					$logger->debug('service contains a [ character');
-					# the following should be enough to catch [NOTFOUND = return] in case that's valid
-					$service .= shift(@svcs) unless $service =~ /\]/;
-					$service .= shift(@svcs) unless $service =~ /\]/;
-				}
-				next if $service eq $svc;
-				push(@services, $service);
-			}
-
-			push(@services, $svc) unless $svc eq 'wins'; # wins support was not correctly built for freebsd
-
-			$output .= "$sec: " . join( ' ', @services ) . "\n";
-
-		}else{
-			$output .= $line;
-		}
+	    }else{
+		$output .= $line;
+	    }
 	}
 
 	open($fh, q{>}, $output_filename ) or die "can't open $output_filename: $!";

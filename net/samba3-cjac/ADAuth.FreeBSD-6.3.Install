@@ -12,7 +12,7 @@ ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH=9a906908273c9428ec9d23c9904d4c1ccb2b50a20043be56922930c330d346dd
+EXPECTED_SHA256_HASH=c0b54036bdbb0c960084e888af4275a16e694cd8b144df5fd2fa8e3c18e90946
 DRYRUN=0
 INSTALL_DEPS=1
 
@@ -199,7 +199,7 @@ merge_ldsoconf_file () {
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
     do
-	grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+        grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
     done
 }
 
@@ -244,7 +244,7 @@ done
 # Install pam_winbind.so and pam_smbpass.so
 for pam_driver in winbind smbpass
 do
-    cp -f ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so /usr/lib/
+    cp -f ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so /usr/lib/ > /dev/null 2>&1
     ln -sf /usr/lib/pam_${pam_driver}.so /usr/lib/pam_${pam_driver}.so.3
 done
 

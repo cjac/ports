@@ -3,7 +3,7 @@
 PORTNAME=	samba3-cjac
 PORTVERSION=	3.5.21
 CATEGORIES=	net
-MASTER_SITES=	http://phx0.colliertech.org/~cjac/src/samba3_bsd6/
+MASTER_SITES=	http://www.colliertech.org/~cjac/src/samba3_bsd6/
 
 MAINTAINER=	cjac@colliertech.org
 COMMENT= backport of samba3 and dependencies to FreeBSD 6.3
@@ -15,11 +15,13 @@ WKDIR  ?= /usr/ports/net/samba3-cjac/work/samba3-cjac-3.5.21
 
 ${.CURDIR}/env:
 	echo "#!/bin/sh" > env ; echo "" >> env ; \
-	echo -n "LD_LIBRARY_PATH=\"${PREFIX}/BerkeleyDB.4.4/lib:${PREFIX}/lib:" >> env ; \
+	echo -n "LD_LIBRARY_PATH=\"${PREFIX}/lib:" >> env ; \
 	echo -n '$$LD_LIBRARY_PATH" ' >> env ; \
 	echo -n "PATH=\"${PREFIX}/bin:${PREFIX}/sbin:" >> env ; \
 	echo -n '$$PATH" ' >> env ; \
 	echo 'exec $$*' >> env
+
+env: ${.CURDIR}/env
 
 inst: ${.CURDIR}/env
 	cp env ${PREFIX}/bin/
@@ -38,6 +40,8 @@ inst: ${.CURDIR}/env
 	cp krb5.conf ntp.conf nsswitch.conf ld.so.conf ${PREFIX}/etc/
 	chmod u+x ${PREFIX}/etc/rc.d/samba
 	chown root:wheel ${PREFIX}/etc/rc.d/samba
+	mkdir ${PREFIX}/lib/idmap
+	cp ${WKDIR}/samba-3.5.21/source3/bin/libtdb.so ${PREFIX}/lib/idmap
 
 install: inst
 
@@ -59,3 +63,9 @@ pkg: ${.CURDIR}/pkg-plist
 		${.CURDIR}/samba3.tgz ; \
 	cd ${.CURDIR}
 
+${.CURDIR}/samba3_i386.tgz: ${.CURDIR}/samba3.tgz
+	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_i386.tgz 
+
+${.CURDIR}/samba3_i386.sum: ${.CURDIR}/samba3_i386.tgz
+	md5sum ${.CURDIR}/samba3_i386.tgz > ${.CURDIR}/samba3_i386.sum
+	sha256sum ${.CURDIR}/samba3_i386.tgz >> ${.CURDIR}/samba3_i386.sum

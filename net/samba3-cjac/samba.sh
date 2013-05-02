@@ -20,7 +20,7 @@
 # You need to enable winbindd separately, by adding:
 winbindd_enable="YES"
 LD_LIBRARY_PATH="/opt/taos/samba3/lib/:$LD_LIBRARY_PATH"
-PATH="/opt/taos/samba3/bin:/opt/taos/samba3/sbin"
+PATH="/opt/taos/samba3/bin:/opt/taos/samba3/sbin:$PATH"
 #
 # Configuration file can be set with:
 samba_config="/opt/taos/samba3/etc/samba/smb.conf"

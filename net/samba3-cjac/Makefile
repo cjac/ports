@@ -40,14 +40,26 @@ inst: ${.CURDIR}/env
 	cp krb5.conf ntp.conf nsswitch.conf ld.so.conf ${PREFIX}/etc/
 	chmod u+x ${PREFIX}/etc/rc.d/samba
 	chown root:wheel ${PREFIX}/etc/rc.d/samba
-	mkdir ${PREFIX}/lib/idmap
-	cp ${WKDIR}/samba-3.5.21/source3/bin/libtdb.so ${PREFIX}/lib/idmap
+	mkdir -p ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/adex.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/ad.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/hash.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/ldap.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/rid.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-3.5.21/source3/bin/tdb2.so ${PREFIX}/lib/samba/idmap
 
 install: inst
 
 ${.CURDIR}/pkg-plist: 
 	cd ${PREFIX} ; \
 	find . -name '*.old' -delete ; \
+	find . -name '*.tdb' -delete ; \
+	find var/lib/samba -name '*.ldb' -delete ; \
+	find var/cache/samba -name '*.dat' -delete ; \
+	find var/run/samba -name '*.pid' -delete ; \
+	find var/run/samba -name 'pipe' -delete ; \
+	find var/run/samba -name 'krb5.conf.*' -delete ; \
+	find . -name 'log.*' -delete ; \
 	find * \! -type d | sort > ${.CURDIR}/pkg-plist ; \
 	cd ${.CURDIR}
 
@@ -67,5 +79,5 @@ ${.CURDIR}/samba3_i386.tgz: ${.CURDIR}/samba3.tgz
 	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_i386.tgz 
 
 ${.CURDIR}/samba3_i386.sum: ${.CURDIR}/samba3_i386.tgz
-	md5sum ${.CURDIR}/samba3_i386.tgz > ${.CURDIR}/samba3_i386.sum
-	sha256sum ${.CURDIR}/samba3_i386.tgz >> ${.CURDIR}/samba3_i386.sum
+	md5 ${.CURDIR}/samba3_i386.tgz > ${.CURDIR}/samba3_i386.sum
+	sha256 ${.CURDIR}/samba3_i386.tgz >> ${.CURDIR}/samba3_i386.sum

@@ -1,3 +1,0 @@
-#!/bin/sh
-
-LD_LIBRARY_PATH="/opt/taos/samba3/BerkeleyDB.4.4/lib:/opt/taos/samba3/lib:$LD_LIBRARY_PATH" PATH="/opt/taos/samba3/bin:/opt/taos/samba3/sbin:$PATH" exec $*

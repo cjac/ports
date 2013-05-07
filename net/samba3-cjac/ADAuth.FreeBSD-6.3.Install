@@ -5,11 +5,11 @@
 #
 
 # Change the following if releases are deployed from elsewhere
-TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
-DOMAIN=ESD.COLLIERTECH.ORG
-SHORT_DOMAIN=ESD
-ADMIN_USER=cjac
-GPG_SERVER=foxtrot.esd.colliertech.org
+TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
+DOMAIN=JNPR.NET
+SHORT_DOMAIN=JNPR
+ADMIN_USER=adm.cjac
+GPG_SERVER=taospoc-util.jnpr.net
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=c0b54036bdbb0c960084e888af4275a16e694cd8b144df5fd2fa8e3c18e90946
@@ -296,6 +296,7 @@ ${NTPDATE} ${NTPHOST} > /dev/null
 # Secure credentials
 eval `SHELL=/bin/sh ./keychain -q --eval`
 ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
+#ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz | sed -e 's/.$//'`
 
 # Join the domain
 ${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}" > /dev/null

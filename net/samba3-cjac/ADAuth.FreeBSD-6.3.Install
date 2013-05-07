@@ -74,7 +74,7 @@ do
 
     test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
     test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
-    test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz
+    test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz >/dev/null 2>&1
     pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz >/dev/null 2>&1
 done
 
@@ -187,13 +187,13 @@ merge_krb5conf_file () {
 merge_ntpconf_file () {
     # TODO: implement merge_ntpconf_file in merge.pl
     TEMP_FILE="/tmp/${NTPCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${NTPCONF_BASENAME}.${TIMESTAMP}
+    cp -f ${NTPCONF_FILE} ${BACKUP_DIR}/${NTPCONF_BASENAME}.${TIMESTAMP}
 
 }
 
 merge_nssconf_file () {
     TEMP_FILE="/tmp/${NSSCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
+    cp -f ${NSSCONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
 
     ${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
     cp -f ${TEMP_FILE} ${NSSCONF_FILE}
@@ -201,7 +201,7 @@ merge_nssconf_file () {
 
 merge_ldsoconf_file () {
     TEMP_FILE="/tmp/${LDSOCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${LDSOCONF_BASENAME}.${TIMESTAMP}
+    cp -f ${LDSOCONF_FILE} ${BACKUP_DIR}/${LDSOCONF_BASENAME}.${TIMESTAMP}
 
     # update system library search paths and ensure that it is updated on boot
     for LIBPATH in ${LD_SEARCH_PATH}
@@ -212,7 +212,7 @@ merge_ldsoconf_file () {
 
 merge_pamsshd_file () {
     TEMP_FILE="/tmp/${PAMSSHD_BASENAME}.${TIMESTAMP}"
-    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${PAMSSHD_BASENAME}.${TIMESTAMP}
+    cp -f ${PAMSSHD_FILE} ${BACKUP_DIR}/${PAMSSHD_BASENAME}.${TIMESTAMP}
 		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
 		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
 }

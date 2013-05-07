@@ -24,7 +24,8 @@ ${.CURDIR}/env:
 env: ${.CURDIR}/env
 
 inst: ${.CURDIR}/env
-	cp env ${PREFIX}/bin/
+	rm -f ${.CURDIR}/pkg-plist
+	cp ${.CURDIR}/env ${PREFIX}/bin/
 	chmod ug+x ${PREFIX}/bin/env
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/libnss_winbind.so.2
@@ -50,9 +51,9 @@ inst: ${.CURDIR}/env
 	cp -f ${WKDIR}/samba-3.5.21/source3/bin/rid.so ${PREFIX}/lib/samba/idmap
 	cp -f ${WKDIR}/samba-3.5.21/source3/bin/tdb2.so ${PREFIX}/lib/samba/idmap
 
-install: inst
+install: inst ${.CURDIR}/pkg-plist
 
-${.CURDIR}/pkg-plist: 
+${.CURDIR}/pkg-plist: inst
 	cd ${PREFIX} ; \
 	find . -name '*.old' -delete ; \
 	find . -name '*.tdb' -delete ; \
@@ -67,9 +68,9 @@ ${.CURDIR}/pkg-plist:
 
 ${.CURDIR}/samba3.tgz: pkg
 
-pkg: ${.CURDIR}/pkg-plist
+pkg: inst ${.CURDIR}/pkg-plist
 	cd ${PREFIX} ; \
-	for file in `find lib bin sbin -type f | xargs file | grep 'not stripped' | awk -F: '{print $$1}'` ; \
+	for file in `find lib bin sbin -type f | grep -v -E '(idmap|pam|nss)' | xargs file | grep 'not stripped' | awk -F: '{print $$1}'` ; \
 	do \
 	  unstripped=`echo $${file}`; \
 	  stripped=`echo $${unstripped}.stripped`; \
@@ -85,8 +86,11 @@ pkg: ${.CURDIR}/pkg-plist
 	cd ${.CURDIR}
 
 ${.CURDIR}/samba3_i386.tgz: ${.CURDIR}/samba3.tgz
-	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_i386.tgz 
+	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_i386.tgz
+	mkdir -p ${CURDIR}/i386/6.3-RELEASE
+	ln -f ${.CURDIR}/samba3_i386.tgz ${.CURDIR}/i386/6.3-RELEASE/samba3_i386.tgz
 
 ${.CURDIR}/samba3_i386.sum: ${.CURDIR}/samba3_i386.tgz
 	md5 ${.CURDIR}/samba3_i386.tgz > ${.CURDIR}/samba3_i386.sum
 	sha256 ${.CURDIR}/samba3_i386.tgz >> ${.CURDIR}/samba3_i386.sum
+	ln -f ${.CURDIR}/samba3_i386.sum ${.CURDIR}/i386/6.3-RELEASE/samba3_i386.sum

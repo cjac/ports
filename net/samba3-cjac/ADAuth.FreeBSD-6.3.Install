@@ -85,7 +85,14 @@ test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE
 ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +this' >/dev/null || pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
+pkg_info | grep -E '^samba3 +this' >/dev/null
+
+if [ $? -eq 0 ]
+then
+		pkg_delete samba3 > /dev/null 2>&1
+fi
+
+pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
 
 for dir in log run cache lib
 do
@@ -239,6 +246,7 @@ for nss_driver in winbind wins
 do
     cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
     ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
+    ln -sf /lib/libnss_${nss_driver}.so /lib/nss_${nss_driver}.so.1
 done
 
 # Install pam_winbind.so and pam_smbpass.so

@@ -28,8 +28,10 @@ inst: ${.CURDIR}/env
 	chmod ug+x ${PREFIX}/bin/env
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/libnss_winbind.so.2
+	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/nss_winbind.so.1
 	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_wins.so ${PREFIX}/lib/libnss_wins.so
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/libnss_wins.so.2
+	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/nss_wins.so.1
 	chmod 444 ${PREFIX}/lib/libnss_win*.so
 	chown root:wheel ${PREFIX}/lib/libnss_win*.so
 	mkdir -p ${PREFIX}/etc/samba/ ${PREFIX}/etc/rc.d \
@@ -67,6 +69,13 @@ ${.CURDIR}/samba3.tgz: pkg
 
 pkg: ${.CURDIR}/pkg-plist
 	cd ${PREFIX} ; \
+	for file in `find lib bin sbin -type f | xargs file | grep 'not stripped' | awk -F: '{print $$1}'` ; \
+	do \
+	  unstripped=`echo $${file}`; \
+	  stripped=`echo $${unstripped}.stripped`; \
+	  strip -p --strip-debug --strip-unneeded $${unstripped} -o $${stripped} ; \
+	  mv $${stripped} $${unstripped} ; \
+	done ; \
 	pkg_create \
 		-p ${PREFIX} \
 		-d ${.CURDIR}/pkg-descr \

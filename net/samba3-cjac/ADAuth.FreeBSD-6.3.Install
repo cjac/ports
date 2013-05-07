@@ -51,7 +51,7 @@ INSTALL_ROOT=/opt/taos/samba3
 LD_SEARCH_PATH="/lib /usr/lib ${INSTALL_ROOT}/lib"
 LDCONFIG="ldconfig -m"
 NTPDATE=ntpdate
-DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv'
+DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
 
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/

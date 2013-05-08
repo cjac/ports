@@ -304,10 +304,10 @@ ${NTPDATE} ${NTPHOST} > /dev/null
 # Secure credentials
 eval `SHELL=/bin/sh ./keychain -q --eval`
 #ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
-ADMIN_PASSWD=`su - ${SSH_USER} -c 'gpg --decrypt ~/auth/${ADMIN_USER}_${DOMAIN}.gpg' 2\\>/dev/null | sed -e 's/.$//'`
+ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ~/auth/${ADMIN_USER}_${DOMAIN}.gpg" 2\\>/dev/null | sed -e 's/.$//'`
 
 # Join the domain
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}" > /dev/null
+${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U "${ADMIN_USER}%\"${ADMIN_PASSWD}\"" > /dev/null || echo "failed to join domain"
 
 # Clear credentials
 ADMIN_PASSWD="nunya"

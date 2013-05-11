@@ -1,4 +1,4 @@
-this is a backport of samba3 and its dependencies to FreeBSD 6.2
+backport of samba3 and dependencies to FreeBSD 6.3
 
 WWW: http://www.colliertech.org/~cjac/src/samba3_bsd6/
 

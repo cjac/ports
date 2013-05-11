@@ -18,12 +18,12 @@ $logger->debug("performing merge");
 my $TAOS_RELEASE =
 	exists $ENV{TAOS_RELEASE} ?
 	$ENV{TAOS_RELEASE} :
-	'http://www.colliertech.org/~cjac/nis-migration';
+	'http://taospoc-util.jnpr.net/~cjac/nis-migration';
 
 my $DOMAIN =
 	exists $ENV{DOMAIN} ?
 	$ENV{DOMAIN} :
-	'ESD.COLLIERTECH.ORG';
+	'JNPR.NET';
 
 my $PDCHOSTS =
 	exists $ENV{PDCHOSTS} ?

@@ -12,9 +12,19 @@ ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH=108a4a21f003ae7c665ce515e123d0cecda0b22b75107f2ef64a4c2fccbaabc8
+EXPECTED_SHA256_HASH=ef8f1d59d10d7f50ea797bfb95c5cdbcda8c91db83e2a24cac76106518184ad8
 DRYRUN=0
 INSTALL_DEPS=1
+
+#
+#   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
+#
+#   $ mkdir ~/auth
+#   $ gpg --encrypt -a -r cjac@colliertech.org > ~/auth/cjac_ESD.COLLIERTECH.ORG.gpg
+#   <type password here>
+#   ^D
+UNATTENDED=1
+BLACK_KEY="auth/${ADMIN_USER}_${DOMAIN}.gpg"
 
 PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
@@ -301,12 +311,14 @@ ${LDCONFIG} ${LDSOCONF_FILE}
 ${NTPDATE} ${NTPHOST} > /dev/null
 
 # Secure credentials
-eval `SHELL=/bin/sh ./keychain -q --eval`
-#ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt auth/${ADMIN_USER}_${DOMAIN}.gpg 2\\>/dev/null | sed -e 's/.$//'`
-ADMIN_PASSWD=`su - ${SSH_USER} -c 'gpg --decrypt ~/auth/${ADMIN_USER}_${DOMAIN}.gpg' 2\\>/dev/null`
+#eval `SHELL=/bin/sh ./keychain -q --eval`
+#test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
+test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
 
 # Join the domain
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_USER}%"${ADMIN_PASSWD}" > /dev/null
+ADMIN_CREDENTIALS=${ADMIN_USER}
+test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
+${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
 # Update nsswitch.conf after domain has been joined
 if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi

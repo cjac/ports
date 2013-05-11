@@ -289,7 +289,6 @@ cp samba.sh ${RCSAMBA_FILE}
 # These files must have changes merged in to them if they exist
 if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
 if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
 if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
 if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
 
@@ -308,6 +307,9 @@ ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ~/auth/${ADMIN_USER}_${DOMAIN}.
 
 # Join the domain
 ${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U "${ADMIN_USER}%\"${ADMIN_PASSWD}\"" > /dev/null || echo "failed to join domain"
+
+# Update nsswitch.conf after domain has been joined
+if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
 
 # Clear credentials
 ADMIN_PASSWD="nunya"

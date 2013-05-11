@@ -35,7 +35,7 @@ inst: ${.CURDIR}/env
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/nss_wins.so.1
 	chmod 444 ${PREFIX}/lib/libnss_win*.so
 	chown root:wheel ${PREFIX}/lib/libnss_win*.so
-	mkdir -p ${PREFIX}/etc/samba/ ${PREFIX}/etc/rc.d \
+	mkdir -p ${PREFIX}/etc/samba/ ${PREFIX}/etc/rc.d ${PREFIX}/etc/pam.d \
 		${PREFIX}/var/log/samba ${PREFIX}/var/run/samba ${PREFIX}/var/cache/samba ${PREFIX}/var/lib/samba
 	cp smb.conf ${PREFIX}/etc/samba/
 	cp samba.sh ${PREFIX}/etc/rc.d/samba
@@ -74,9 +74,10 @@ pkg: inst ${.CURDIR}/pkg-plist
 	do \
 	  unstripped=`echo $${file}`; \
 	  stripped=`echo $${unstripped}.stripped`; \
-	  strip -p --strip-debug --strip-unneeded $${unstripped} -o $${stripped} ; \
+	  strip -p --strip-debug $${unstripped} -o $${stripped} ; \
 	  mv $${stripped} $${unstripped} ; \
-	done ; \
+	done
+	echo "@comment ORIGIN:net/samba3-cjac" >> ${.CURDIR}/pkg-plist
 	pkg_create \
 		-p ${PREFIX} \
 		-d ${.CURDIR}/pkg-descr \

@@ -5,11 +5,11 @@
 #
 
 # Change the following if releases are deployed from elsewhere
-TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
-DOMAIN=JNPR.NET
-SHORT_DOMAIN=JNPR
-ADMIN_USER=adm.cjac
-GPG_SERVER=taospoc-util.jnpr.net
+TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
+DOMAIN=ESD.COLLIERTECH.ORG
+SHORT_DOMAIN=ESD
+ADMIN_USER=cjac
+GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
@@ -341,8 +341,7 @@ ${NTPDATE} ${NTPHOST} > /dev/null 2>&1
 # Secure credentials
 #eval `SHELL=/bin/sh ./keychain -q --eval`
 #test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
-#test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
-test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
+test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
 
 # Join the domain
 ADMIN_CREDENTIALS=${ADMIN_USER}

@@ -327,7 +327,7 @@ test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
 # Join the domain
 ADMIN_CREDENTIALS=${ADMIN_USER}
 test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
 # Update nsswitch.conf after domain has been joined
 if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi

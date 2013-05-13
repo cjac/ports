@@ -16,6 +16,7 @@ EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375
 DRYRUN=0
 INSTALL_DEPS=1
 HOSTNAME=`hostname -s`
+TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 
 #
 #   truncate long hostnames by getting rid of vowels
@@ -23,6 +24,7 @@ HOSTNAME=`hostname -s`
 HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
 test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
 
+grep -i -E 'netbios[ 	]+name[ 	]+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -75,6 +77,19 @@ DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
 export PACKAGESITE
 
+TAR_VERSION=`/usr/bin/tar --version`
+echo ${TAR_VERSION} | grep '^bsdtar' > /dev/null
+if [ $? != 0  ]
+then
+  mv /usr/bin/tar /usr/bin/tar.orig.${TIMESTAMP}
+  if [ -f /usr/bin/bsdtar ]
+  then
+    ln -s /usr/bin/bsdtar /usr/bin/tar
+  else
+    echo "no /usr/bin/bsdtar.  failing"
+  fi
+fi
+
 test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 
 # Check if perl is originally installed
@@ -112,6 +127,12 @@ fi
 
 pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
 
+if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
+then
+  rm /usr/bin/tar
+  mv /usr/bin/tar.orig.${TIMESTAMP} /usr/bin/tar
+fi
+
 for dir in log run cache lib
 do
     mkdir -p ${INSTALL_ROOT}/var/${dir}/samba
@@ -134,7 +155,6 @@ if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
 if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
 
 BACKUP_DIR="${PWD}/Backup_Files"
-TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
 
 merge_krb5conf_file () {
@@ -312,11 +332,11 @@ if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${
 
 # update dynamic library symbols
 RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-test ${DRYRUN} = 0 && grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+test ${DRYRUN} = 0 && grep -s "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
 ${LDCONFIG} ${LDSOCONF_FILE}
 
 # Synchronize clocks
-${NTPDATE} ${NTPHOST} > /dev/null
+${NTPDATE} ${NTPHOST} > /dev/null 2>&1
 
 # Secure credentials
 #eval `SHELL=/bin/sh ./keychain -q --eval`

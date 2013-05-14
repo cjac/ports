@@ -12,11 +12,14 @@ ADMIN_USER=adm.cjac
 GPG_SERVER=taospoc-util.jnpr.net
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
+EXPECTED_SHA256_HASH_6_3_RELEASE=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
+EXPECTED_SHA256_HASH_7_1_RELEASE=4be0273b727c7a1a183e4fb79f9bdac51cdd4e935d1e437fcd7fdcedd6cecdbd
 DRYRUN=0
 INSTALL_DEPS=1
 HOSTNAME=`hostname -s`
 TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
+
+
 
 #
 #   truncate long hostnames by getting rid of vowels
@@ -116,6 +119,10 @@ test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE
 
 # cryptographically verify integrity of release package
 ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
+
+test "${RELEASE_SHORT}" = "6.3" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_6_3_RELEASE}
+test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7_1_RELEASE}
+
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
 pkg_info | grep -E '^samba3 +this' >/dev/null
@@ -126,6 +133,9 @@ then
 fi
 
 pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
+
+chmod u+x ${INSTALL_ROOT}/sbin/*
+chmod a+x ${INSTALL_ROOT}/bin/*
 
 if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
 then

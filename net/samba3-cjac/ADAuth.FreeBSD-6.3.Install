@@ -15,6 +15,16 @@ WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
 DRYRUN=0
 INSTALL_DEPS=1
+HOSTNAME=`hostname -s`
+TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
+
+#
+#   truncate long hostnames by getting rid of vowels
+#
+HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
+test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
+
+grep -i -E 'netbios[ 	]+name[ 	]+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -53,7 +63,7 @@ EOF
 #
 
 PLATFORM=`uname`
-RELEASE=`uname -r`
+RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
 FETCHER="fetch -o"
@@ -66,6 +76,19 @@ DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
 export PACKAGESITE
+
+TAR_VERSION=`/usr/bin/tar --version`
+echo ${TAR_VERSION} | grep '^bsdtar' > /dev/null
+if [ $? != 0  ]
+then
+  mv /usr/bin/tar /usr/bin/tar.orig.${TIMESTAMP}
+  if [ -f /usr/bin/bsdtar ]
+  then
+    ln -s /usr/bin/bsdtar /usr/bin/tar
+  else
+    echo "no /usr/bin/bsdtar.  failing"
+  fi
+fi
 
 test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 
@@ -104,6 +127,12 @@ fi
 
 pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
 
+if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
+then
+  rm /usr/bin/tar
+  mv /usr/bin/tar.orig.${TIMESTAMP} /usr/bin/tar
+fi
+
 for dir in log run cache lib
 do
     mkdir -p ${INSTALL_ROOT}/var/${dir}/samba
@@ -126,7 +155,6 @@ if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
 if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
 
 BACKUP_DIR="${PWD}/Backup_Files"
-TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
 
 merge_krb5conf_file () {
@@ -304,21 +332,22 @@ if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${
 
 # update dynamic library symbols
 RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-test ${DRYRUN} = 0 && grep "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+test ${DRYRUN} = 0 && grep -s "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
 ${LDCONFIG} ${LDSOCONF_FILE}
 
 # Synchronize clocks
-${NTPDATE} ${NTPHOST} > /dev/null
+${NTPDATE} ${NTPHOST} > /dev/null 2>&1
 
 # Secure credentials
 #eval `SHELL=/bin/sh ./keychain -q --eval`
 #test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
-test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+#test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
 
 # Join the domain
 ADMIN_CREDENTIALS=${ADMIN_USER}
 test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
-${SAMBA_RUNNER} net ads join -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
 # Update nsswitch.conf after domain has been joined
 if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi

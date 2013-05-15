@@ -27,7 +27,7 @@ TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
 test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
 
-grep -i -E 'netbios\s+name\s+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
+grep -i -E 'netbios +name +=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -85,6 +85,7 @@ EOF
 
 PLATFORM=`uname`
 RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
+RELEASE_LONG=`uname -r`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
 FETCHER="fetch -o"
@@ -143,7 +144,7 @@ test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7
 
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +this' >/dev/null
+pkg_info | grep -E '^samba3 +' >/dev/null
 
 if [ $? -eq 0 ]
 then
@@ -174,6 +175,10 @@ SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 
 PERL=`which perl`
 PERL_VERSION=`${PERL} -e 'print "$]\n"'`
+
+KERNEL_VERSION=`uname -a | ${PERL} -ne '$_ =~ /\s(\S+)\s#/; my $kver=$1; print "$kver\n"'`
+
+test ${KERNEL_VERSION} = ${RELEASE_LONG} || ( echo "mismatched kernel and userspace" ; exit )
 
 # Verify that samba was installed as expected
 EXPECTED_SAMBA_VERSION='Version 3.5.21'

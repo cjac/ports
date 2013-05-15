@@ -144,11 +144,13 @@ test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7
 
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +' >/dev/null
+pkg_info | grep -E '^samba3 +' >/dev/null && ( pkg_delete samba3 > /dev/null 2>&1 ; rm -rf /opt/taos/samba3 )
 
-if [ $? -eq 0 ]
+OPT_CAPACITY=`df /opt | tail -1 | awk '{print $4}'`
+if [ $OPT_CAPACITY -lt 160000 ]
 then
-		pkg_delete samba3 > /dev/null 2>&1
+  echo "/opt has insufficient capacity for installation"
+  exit
 fi
 
 pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1

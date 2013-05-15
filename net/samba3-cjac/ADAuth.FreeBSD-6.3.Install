@@ -27,7 +27,7 @@ TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
 test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
 
-grep -i -E 'netbios[ 	]+name[ 	]+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
+grep -i -E 'netbios\s+name\s+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -45,6 +45,24 @@ awk '{print $4}' |
 sed -e 's/\.$//'`
 PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
 NTPHOST=${PDCHOST}
+
+NTP_PORT=123
+KRB5_PORT=88
+LDAP_PORT=389
+LDAPS_PORT=636
+SMB_PORT=445
+LDAP_GC_PORT=3268
+LDAPS_GC_PORT=3269
+
+NC=/usr/bin/nc
+
+${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || ( echo "cannot reach NTP port" ; exit )
+${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || ( echo "cannot reach KRB5 port" ; exit )
+${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || ( echo "cannot reach LDAP port" ; exit )
+${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || ( echo "cannot reach LDAPS port" ; exit )
+${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || ( echo "cannot reach SMB port" ; exit )
+${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || ( echo "cannot reach LDAP GC port" ; exit )
+${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || ( echo "cannot reach LDAPS GC port" ; exit )
 
 # create somewhere for log4perl to dump its logs
 if [ ! -d log ] ; then mkdir log ; fi

@@ -33,6 +33,19 @@ my $PDCHOSTS =
    awk '{print \$4}' |
    sed -e 's/\.\$//'`;
 
+my %DC_LIST;
+foreach my $DC ( split(/\s+/, ${PDCHOSTS}) ){
+    my $RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print \$2}' | awk -F/ '{print \$1}'`;
+    next unless $RTT;
+    $DC_LIST{$RTT} = $DC;
+}
+
+my @PDCHOSTS;
+foreach my $RTT ( sort { $a <=> $b } keys %DC_LIST ){
+  push @PDCHOSTS, $DC_LIST{$RTT};
+}
+$PDCHOSTS = join(' ', @PDCHOSTS);
+
 my $INSTALL_ROOT =
 	exists $ENV{INSTALL_ROOT} ?
 	$ENV{INSTALL_ROOT} :

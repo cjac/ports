@@ -53,8 +53,10 @@ do
   RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
   test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/DC_LIST
 done
-NEAREST_PDCS=`sort -n /tmp/DC_LIST | grep ' ' | head -5 | awk '{print $2}'`
-NEAREST_PDC=`sort -n /tmp/DC_LIST | grep ' ' | head -1 | awk '{print $2}'`
+sort -n /tmp/DC_LIST | grep ' ' | awk '{print $2}' > /tmp/SORTED_DC_LIST
+PDCHOSTS=`cat /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_PDCS=`head -5 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_PDC=`head -1 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
 PDCHOST=${NEAREST_PDC}
 NTPHOST=${PDCHOST}
 

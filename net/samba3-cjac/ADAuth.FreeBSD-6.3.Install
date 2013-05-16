@@ -27,7 +27,11 @@ TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
 test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
 
-grep -i -E 'netbios +name +=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
+grep -v 'netbios name' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        netbios name = ${HOSTNAME}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
+
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -43,8 +47,21 @@ PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
 awk '{print $4}' | 
 sed -e 's/\.$//'`
-PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
+echo "" > /tmp/DC_LIST
+for DC in ${PDCHOSTS}
+do
+  RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
+  test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/DC_LIST
+done
+NEAREST_PDCS=`sort -n /tmp/DC_LIST | grep ' ' | head -5 | awk '{print $2}'`
+NEAREST_PDC=`sort -n /tmp/DC_LIST | grep ' ' | head -1 | awk '{print $2}'`
+PDCHOST=${NEAREST_PDC}
 NTPHOST=${PDCHOST}
+
+grep -v 'password server' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
 
 NTP_PORT=123
 KRB5_PORT=88
@@ -56,13 +73,18 @@ LDAPS_GC_PORT=3269
 
 NC=/usr/bin/nc
 
-${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || ( echo "cannot reach NTP port" ; exit )
-${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || ( echo "cannot reach KRB5 port" ; exit )
-${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || ( echo "cannot reach LDAP port" ; exit )
-${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || ( echo "cannot reach LDAPS port" ; exit )
-${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || ( echo "cannot reach SMB port" ; exit )
-${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || ( echo "cannot reach LDAP GC port" ; exit )
-${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || ( echo "cannot reach LDAPS GC port" ; exit )
+UNREACHABLE=""
+
+${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} NTP"
+${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} KRB5_PORT"
+${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_PORT"
+${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_PORT"
+${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || UNREACHABLE="${UNREACHABLE} SMB_PORT"
+${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_GC_PORT"
+${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_GC_PORT"
+
+test "${UNREACHABLE}x" = "x" || echo "cannot reach ${UNREACHABLE} port(s)"
+test "${UNREACHABLE}x" = "x" || exit
 
 # create somewhere for log4perl to dump its logs
 if [ ! -d log ] ; then mkdir log ; fi
@@ -146,6 +168,7 @@ if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash
 
 pkg_info | grep -E '^samba3 +' >/dev/null && ( pkg_delete samba3 > /dev/null 2>&1 ; rm -rf /opt/taos/samba3 )
 
+mkdir -p /opt
 OPT_CAPACITY=`df /opt | tail -1 | awk '{print $4}'`
 if [ $OPT_CAPACITY -lt 160000 ]
 then
@@ -360,10 +383,8 @@ cp smb.conf ${SMBCONF_FILE}
 cp samba.sh ${RCSAMBA_FILE}
 
 # These files must have changes merged in to them if they exist
-if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
 if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
 if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
-if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
 
 # update dynamic library symbols
 RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
@@ -383,9 +404,6 @@ test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
 ADMIN_CREDENTIALS=${ADMIN_USER}
 test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
 ${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
-
-# Update nsswitch.conf after domain has been joined
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
 
 # Clear credentials
 ADMIN_PASSWD="nunya"
@@ -407,6 +425,14 @@ done
 
 test "${WBSTATUS}x" = "x" && WBSTATUS=offline
 echo "winbind ${WBSTATUS}"
+
+if [ "${WBSTATUS}" = "online" ]
+then
+  # Update nsswitch.conf after domain has been joined
+  if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
+  if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
+  if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+fi
 
 # clean up perl if it was not originally installed
 if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]

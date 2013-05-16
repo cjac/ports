@@ -12,7 +12,8 @@ ADMIN_USER=cjac
 GPG_SERVER=foxtrot.esd.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
+EXPECTED_SHA256_HASH_6_3_RELEASE=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
+EXPECTED_SHA256_HASH_7_1_RELEASE=4be0273b727c7a1a183e4fb79f9bdac51cdd4e935d1e437fcd7fdcedd6cecdbd
 DRYRUN=0
 INSTALL_DEPS=1
 HOSTNAME=`hostname -s`
@@ -24,7 +25,10 @@ TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
 HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
 test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
 
-grep -i -E 'netbios[ 	]+name[ 	]+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
+grep -v 'netbios name' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        netbios name = ${HOSTNAME}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
 
 #
 #   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
@@ -40,8 +44,44 @@ PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
 grep -v '^;' |
 awk '{print $4}' | 
 sed -e 's/\.$//'`
-PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
+echo "" > /tmp/DC_LIST
+for DC in ${PDCHOSTS}
+do
+  RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
+  test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/DC_LIST
+done
+NEAREST_PDCS=`sort -n /tmp/DC_LIST | grep ' ' | head -5 | awk '{print $2}'`
+NEAREST_PDC=`sort -n /tmp/DC_LIST | grep ' ' | head -1 | awk '{print $2}'`
+PDCHOST=${NEAREST_PDC}
 NTPHOST=${PDCHOST}
+
+grep -v 'password server' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
+
+NTP_PORT=123
+KRB5_PORT=88
+LDAP_PORT=389
+LDAPS_PORT=636
+SMB_PORT=445
+LDAP_GC_PORT=3268
+LDAPS_GC_PORT=3269
+
+NC=/usr/bin/nc
+
+UNREACHABLE=""
+
+${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} NTP"
+${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} KRB5_PORT"
+${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_PORT"
+${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_PORT"
+${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || UNREACHABLE="${UNREACHABLE} SMB_PORT"
+${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_GC_PORT"
+${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_GC_PORT"
+
+test "${UNREACHABLE}x" = "x" || echo "cannot reach ${UNREACHABLE} port(s)"
+test "${UNREACHABLE}x" = "x" || exit
 
 # create somewhere for log4perl to dump its logs
 if [ ! -d log ] ; then mkdir log ; fi
@@ -64,6 +104,7 @@ EOF
 
 PLATFORM=`uname`
 RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
+RELEASE_LONG=`uname -r`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
 FETCHER="fetch -o"
@@ -116,16 +157,26 @@ test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE
 
 # cryptographically verify integrity of release package
 ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
+
+test "${RELEASE_SHORT}" = "6.3" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_6_3_RELEASE}
+test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7_1_RELEASE}
+
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +this' >/dev/null
+pkg_info | grep -E '^samba3 +' >/dev/null && ( pkg_delete samba3 > /dev/null 2>&1 ; rm -rf /opt/taos/samba3 )
 
-if [ $? -eq 0 ]
+mkdir -p /opt
+OPT_CAPACITY=`df /opt | tail -1 | awk '{print $4}'`
+if [ $OPT_CAPACITY -lt 160000 ]
 then
-		pkg_delete samba3 > /dev/null 2>&1
+  echo "/opt has insufficient capacity for installation"
+  exit
 fi
 
 pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
+
+chmod u+x ${INSTALL_ROOT}/sbin/*
+chmod a+x ${INSTALL_ROOT}/bin/*
 
 if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
 then
@@ -146,6 +197,10 @@ SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 
 PERL=`which perl`
 PERL_VERSION=`${PERL} -e 'print "$]\n"'`
+
+KERNEL_VERSION=`uname -a | ${PERL} -ne '$_ =~ /\s(\S+)\s#/; my $kver=$1; print "$kver\n"'`
+
+test ${KERNEL_VERSION} = ${RELEASE_LONG} || ( echo "mismatched kernel and userspace" ; exit )
 
 # Verify that samba was installed as expected
 EXPECTED_SAMBA_VERSION='Version 3.5.21'
@@ -325,10 +380,8 @@ cp smb.conf ${SMBCONF_FILE}
 cp samba.sh ${RCSAMBA_FILE}
 
 # These files must have changes merged in to them if they exist
-if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
 if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
 if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
-if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
 
 # update dynamic library symbols
 RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
@@ -341,15 +394,13 @@ ${NTPDATE} ${NTPHOST} > /dev/null 2>&1
 # Secure credentials
 #eval `SHELL=/bin/sh ./keychain -q --eval`
 #test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
-test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+#test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
 
 # Join the domain
 ADMIN_CREDENTIALS=${ADMIN_USER}
 test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
 ${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
-
-# Update nsswitch.conf after domain has been joined
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
 
 # Clear credentials
 ADMIN_PASSWD="nunya"
@@ -371,6 +422,14 @@ done
 
 test "${WBSTATUS}x" = "x" && WBSTATUS=offline
 echo "winbind ${WBSTATUS}"
+
+if [ "${WBSTATUS}" = "online" ]
+then
+  # Update nsswitch.conf after domain has been joined
+  if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
+  if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
+  if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+fi
 
 # clean up perl if it was not originally installed
 if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]

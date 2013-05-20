@@ -8,6 +8,7 @@
 TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
 DOMAIN=JNPR.NET
 SHORT_DOMAIN=JNPR
+OU_TO_JOIN="OU=Unix-Based,OU=Servers,OU=Eng,DC=JNPR,DC=NET"
 ADMIN_USER=adm.cjac
 GPG_SERVER=taospoc-util.jnpr.net
 SSH_USER=cjac
@@ -405,7 +406,7 @@ test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
 # Join the domain
 ADMIN_CREDENTIALS=${ADMIN_USER}
 test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
-${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
 # Clear credentials
 ADMIN_PASSWD="nunya"

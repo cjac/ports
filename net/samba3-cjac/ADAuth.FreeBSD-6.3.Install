@@ -204,6 +204,10 @@ enable_services () {
     grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
 }
 
+rollback () {
+    # TODO: Implement rollback as ADAuth.FreeBSD-6.3.Rollback
+}
+
 RCDIR=/etc/rc.d
 RCLOCAL_FILE=/etc/rc.local
 RCCONF_FILE=/etc/rc.conf
@@ -329,6 +333,14 @@ then
   if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
   if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
   if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+
+  # Verify that getent is querying winbind
+  GETENT_OUTPUT=`/usr/bin/getent passwd ${DOMAIN}/${SSH_USER}`
+  if [ $? != 0 ] ; then rollback; exit ; fi
+
+  ID_OUTPUT=`/usr/bin/id ${DOMAIN}/${SSH_USER}`
+  if [ $? != 0 ] ; then rollback; exit ; fi
+
 fi
 
 # clean up perl if it was not originally installed

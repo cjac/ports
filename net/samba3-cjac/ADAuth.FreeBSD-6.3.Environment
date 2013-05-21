@@ -95,7 +95,7 @@ EOF
 #
 
 PLATFORM=`uname`
-RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
+RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/'`
 RELEASE_LONG=`uname -r`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 MARCH=`uname -m`
@@ -109,108 +109,3 @@ DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
 export PACKAGESITE
-#
-#   Platform-independent code
-#
-
-# Change the following if releases are deployed from elsewhere
-TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
-DOMAIN=ESD.COLLIERTECH.ORG
-SHORT_DOMAIN=ESD
-ADMIN_USER=cjac
-GPG_SERVER=foxtrot.esd.colliertech.org
-OU_TO_JOIN="OU=Unix-Based,OU=Servers,OU=ESD,DC=COLLIERTECH,DC=ORG"
-SSH_USER=cjac
-WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH_6_3_RELEASE=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
-EXPECTED_SHA256_HASH_7_1_RELEASE=4be0273b727c7a1a183e4fb79f9bdac51cdd4e935d1e437fcd7fdcedd6cecdbd
-DRYRUN=0
-INSTALL_DEPS=1
-HOSTNAME=`hostname -s`
-TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
-
-#
-#   truncate long hostnames by getting rid of vowels
-#
-HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
-test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
-#
-#   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
-#
-#   $ mkdir ~/auth
-#   $ gpg --encrypt -a -r cjac@colliertech.org > ~/auth/cjac_ESD.COLLIERTECH.ORG.gpg
-#   <type password here>
-#   ^D
-UNATTENDED=1
-BLACK_KEY="auth/${ADMIN_USER}_${DOMAIN}.gpg"
-
-PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
-grep -v '^;' |
-awk '{print $4}' | 
-sed -e 's/\.$//'`
-echo "" > /tmp/DC_LIST
-for DC in ${PDCHOSTS}
-do
-  RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
-  test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/DC_LIST
-done
-sort -n /tmp/DC_LIST | grep ' ' | awk '{print $2}' > /tmp/SORTED_DC_LIST
-PDCHOSTS=`cat /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-NEAREST_PDCS=`head -5 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-NEAREST_PDC=`head -1 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-PDCHOST=${NEAREST_PDC}
-NTPHOST=${PDCHOST}
-
-NTP_PORT=123
-KRB5_PORT=88
-LDAP_PORT=389
-LDAPS_PORT=636
-SMB_PORT=445
-LDAP_GC_PORT=3268
-LDAPS_GC_PORT=3269
-
-NC=/usr/bin/nc
-
-UNREACHABLE=""
-
-${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} NTP"
-${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} KRB5_PORT"
-${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_PORT"
-${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_PORT"
-${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || UNREACHABLE="${UNREACHABLE} SMB_PORT"
-${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_GC_PORT"
-${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_GC_PORT"
-
-test "${UNREACHABLE}x" = "x" || echo "cannot reach ${UNREACHABLE} port(s)"
-test "${UNREACHABLE}x" = "x" || exit
-
-# create somewhere for log4perl to dump its logs
-if [ ! -d log ] ; then mkdir log ; fi
-chmod a+rwx log
-
-test -f log4perl.conf || cat > log4perl.conf <<EOF
-log4perl.rootLogger=DEBUG, LOGFILE
-
-log4perl.appender.LOGFILE=Log::Log4perl::Appender::File
-log4perl.appender.LOGFILE.filename=log/merge.log
-log4perl.appender.LOGFILE.mode=append
-
-log4perl.appender.LOGFILE.layout=PatternLayout
-log4perl.appender.LOGFILE.layout.ConversionPattern=[%d] %F %L %c - %m%n
-EOF
-
-#
-#   FreeBSD 6.3-specific code
-#
-
-PLATFORM=`uname`
-RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
-RELEASE_LONG=`uname -r`
-RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
-MARCH=`uname -m`
-FETCHER="fetch -o"
-INSTALL_ROOT=/opt/taos/samba3
-LD_SEARCH_PATH="/lib /usr/lib ${INSTALL_ROOT}/lib"
-LDCONFIG="ldconfig -m"
-NTPDATE=ntpdate
-DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'

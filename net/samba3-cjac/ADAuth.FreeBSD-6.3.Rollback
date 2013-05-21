@@ -20,6 +20,7 @@ leave_domain () {
 
 stop_services () {
     ${RCSAMBA_FILE} stop
+    echo "winbind service stopped"
 }
 
 disable_services () {

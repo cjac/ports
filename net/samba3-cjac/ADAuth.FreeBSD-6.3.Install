@@ -1,16 +1,19 @@
 #!/bin/sh
 
 # source common environment details
-source ADAuth.FreeBSD-6.3.Environment
+source ./ADAuth.FreeBSD-6.3.Environment
 
-TAR_VERSION=`/usr/bin/tar --version`
+test -f /bin/tar && TAR=/bin/tar
+test -f /usr/bin/tar && TAR=/usr/bin/tar
+
+TAR_VERSION=`${TAR} --version`
 echo ${TAR_VERSION} | grep '^bsdtar' > /dev/null
 if [ $? != 0  ]
 then
-  mv /usr/bin/tar /usr/bin/tar.orig.${TIMESTAMP}
+  mv ${TAR} ${TAR}.orig.${TIMESTAMP}
   if [ -f /usr/bin/bsdtar ]
   then
-    ln -s /usr/bin/bsdtar /usr/bin/tar
+    ln -s /usr/bin/bsdtar ${TAR}
   else
     echo "no /usr/bin/bsdtar.  failing"
   fi

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # source common environment details
-source ./ADAuth.FreeBSD-6.3.Environment
+. ./ADAuth.FreeBSD-6.3.Environment
 
 test -f /bin/tar && TAR=/bin/tar
 test -f /usr/bin/tar && TAR=/usr/bin/tar

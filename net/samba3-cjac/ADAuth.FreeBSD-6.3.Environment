@@ -5,12 +5,12 @@
 #
 
 # Change the following if releases are deployed from elsewhere
-TAOS_RELEASE=http://taospoc-util.jnpr.net/~cjac/nis-migration
-DOMAIN=JNPR.NET
-SHORT_DOMAIN=JNPR
-OU_TO_JOIN="OU=Unix-Based,OU=Servers,OU=Eng,DC=JNPR,DC=NET"
-ADMIN_USER=adm.cjac
-GPG_SERVER=taospoc-util.jnpr.net
+TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
+DOMAIN=ESD.COLLIERTECH.ORG
+SHORT_DOMAIN=ESD
+OU_TO_JOIN="OU=Unix-Based,OU=Servers,OU=Eng,DC=COLLIERTECH,DC=ORG"
+ADMIN_USER=cjac
+GPG_SERVER=foxtrot.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH_6_3_RELEASE=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520

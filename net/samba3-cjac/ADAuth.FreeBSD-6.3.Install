@@ -208,25 +208,6 @@ rollback () {
     # TODO: Implement rollback as ADAuth.FreeBSD-6.3.Rollback
 }
 
-RCDIR=/etc/rc.d
-RCLOCAL_FILE=/etc/rc.local
-RCCONF_FILE=/etc/rc.conf
-
-KRB5CONF_DIR=/etc
-KRB5CONF_BASENAME=krb5.conf
-NTPCONF_BASENAME=ntp.conf
-LDSOCONF_BASENAME=ld.so.conf
-PAMSSHD_BASENAME=sshd
-NSSCONF_BASENAME=nsswitch.conf
-KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
-
-SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
-RCSAMBA_FILE=${RCDIR}/samba
-NTPCONF_FILE=/etc/${NTPCONF_BASENAME}
-LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
-PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
-NSSCONF_FILE=/etc/${NSSCONF_BASENAME}
-
 # Install libnss_winbind.so and libnss_wins.so
 for nss_driver in winbind wins
 do
@@ -308,7 +289,8 @@ ${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${PD
 
 # Clear credentials
 ADMIN_PASSWD="nunya"
-export ADMIN_PASSWD
+ADMIN_CREDENTIALS="nunya"
+export ADMIN_PASSWD ADMIN_CREDENTIALS
 
 enable_services
 

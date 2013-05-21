@@ -117,3 +117,22 @@ DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
 # PACKAGESITE is used by pkg_add -r
 PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
 export PACKAGESITE
+
+RCDIR=/etc/rc.d
+RCLOCAL_FILE=/etc/rc.local
+RCCONF_FILE=/etc/rc.conf
+
+KRB5CONF_DIR=/etc
+KRB5CONF_BASENAME=krb5.conf
+NTPCONF_BASENAME=ntp.conf
+LDSOCONF_BASENAME=ld.so.conf
+PAMSSHD_BASENAME=sshd
+NSSCONF_BASENAME=nsswitch.conf
+KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
+
+SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
+RCSAMBA_FILE=${RCDIR}/samba
+NTPCONF_FILE=/etc/${NTPCONF_BASENAME}
+LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
+PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
+NSSCONF_FILE=/etc/${NSSCONF_BASENAME}

@@ -51,7 +51,12 @@ test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7
 
 if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
 
-pkg_info | grep -E '^samba3 +' >/dev/null && ( pkg_delete samba3 > /dev/null 2>&1 ; rm -rf /opt/taos/samba3 )
+pkg_info | grep -E '^samba3 +' >/dev/null
+if [ $? = 0 ]
+then
+  echo "samba3 package installed.  Please remove prior to running installer"
+  exit
+fi
 
 mkdir -p /opt
 OPT_CAPACITY=`df /opt | tail -1 | awk '{print $4}'`

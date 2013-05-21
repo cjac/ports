@@ -91,10 +91,6 @@ SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 PERL=`which perl`
 PERL_VERSION=`${PERL} -e 'print "$]\n"'`
 
-KERNEL_VERSION=`uname -a | ${PERL} -ne '$_ =~ /\s(\S+)\s#/; my $kver=$1; print "$kver\n"'`
-
-test ${KERNEL_VERSION} = ${RELEASE_LONG} || ( echo "mismatched kernel and userspace" ; exit )
-
 # Verify that samba was installed as expected
 EXPECTED_SAMBA_VERSION='Version 3.5.21'
 ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`

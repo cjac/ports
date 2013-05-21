@@ -98,6 +98,14 @@ PLATFORM=`uname`
 RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/'`
 RELEASE_LONG=`uname -r`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
+KERNEL_VERSION=`uname -a | awk '{print $5}'`
+
+if [ ${KERNEL_VERSION} != ${RELEASE_LONG} ]
+then
+  echo "mismatched kernel and userspace"
+  exit
+fi
+
 MARCH=`uname -m`
 FETCHER="fetch -o"
 INSTALL_ROOT=/opt/taos/samba3

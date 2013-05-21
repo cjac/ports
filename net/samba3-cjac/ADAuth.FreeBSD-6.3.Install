@@ -52,16 +52,6 @@ NEAREST_PDC=`head -1 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
 PDCHOST=${NEAREST_PDC}
 NTPHOST=${PDCHOST}
 
-grep -v 'netbios name' smb.conf > /tmp/smb.conf
-echo "" >> /tmp/smb.conf
-echo "        netbios name = ${HOSTNAME}" >> /tmp/smb.conf
-mv /tmp/smb.conf .
-
-grep -v 'password server' smb.conf > /tmp/smb.conf
-echo "" >> /tmp/smb.conf
-echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
-mv /tmp/smb.conf .
-
 NTP_PORT=123
 KRB5_PORT=88
 LDAP_PORT=389
@@ -376,6 +366,17 @@ test ${DRYRUN} = 1 && NTPCONF_FILE="${NTPCONF_FILE}.dryrun"
 test ${DRYRUN} = 1 && NSSCONF_FILE="${NSSCONF_FILE}.dryrun"
 test ${DRYRUN} = 1 && LDSOCONF_FILE="${LDSOCONF_FILE}.dryrun"
 test ${DRYRUN} = 1 && PAMSSHD_FILE="${PAMSSHD_FILE}.dryrun"
+
+# hard code the netbios name and password server into smb.con
+grep -v 'netbios name' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        netbios name = ${HOSTNAME}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
+
+grep -v 'password server' smb.conf > /tmp/smb.conf
+echo "" >> /tmp/smb.conf
+echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
+mv /tmp/smb.conf .
 
 # over-write the samba config and service launcher
 cp smb.conf ${SMBCONF_FILE}

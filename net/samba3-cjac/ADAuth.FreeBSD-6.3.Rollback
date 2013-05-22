@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # source common environment details
-. ./ADAuth.FreeBSD-6.3.Environment
+test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
 
 leave_domain () {
     # Leave the domain
@@ -23,12 +23,8 @@ stop_services () {
     echo "winbind service stopped"
 }
 
-enable_services () {
-    grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
-    grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
-}
-
 disable_services () {
+    stop_services
     TEMP_FILE=/tmp/rc.conf.${TIMESTAMP}
     cp ${RCCONF_FILE} ${TEMP_FILE}
     grep -v 'samba_enable="YES"' ${TEMP_FILE} > /tmp/rc.conf
@@ -43,11 +39,11 @@ disable_services () {
 
     if [ ${LEN_RCCONF_FILE} != ${LEN_EXPECTED} ]
     then
-	echo "unexpected results from removing services from ${RCCONF_FILE}.  Not rolled back."
+	echo "unexpected results when removing services from ${RCCONF_FILE}.  Not rolled back."
     fi
 
     mv ${TEMP_FILE} ${RCCONF_FILE}
-    echo "winbind service disabled"
+    echo "samba/winbind service disabled"
 }
 
 restore_config_files () {
@@ -64,6 +60,7 @@ restore_config_files () {
     do
 	INITIAL_CONF=`ls ${INSTALL_SOURCE}/Backup_Files/${CONF}* | sort -n | head -1`
 	test "${INITIAL_CONF}x" = "x" && continue
+	echo -n "${CONF} "
 	test "${CONF}" = "sshd" && CONFDIR=/etc/pam.d/
 	mv ${CONFDIR}/${CONF} ${CONFDIR}/${CONF}.rollback.`date +%s`
 	cp ${INITIAL_CONF} ${CONFDIR}/${CONF}
@@ -136,3 +133,10 @@ purge_install_root () {
     rm -rf ${INSTALL_ROOT}
     echo "${INSTALL_ROOT} directory purged"
 }
+
+rollback () {
+#    stop_services
+#    disable_services
+    restore_config_files
+}
+

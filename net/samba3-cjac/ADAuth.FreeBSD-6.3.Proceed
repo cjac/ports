@@ -1,0 +1,406 @@
+#!/bin/sh
+
+test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
+
+join_domain () {
+    # Secure credentials
+    ADMIN_CREDENTIALS=${ADMIN_USER}
+    # Quite secure
+#    test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
+    # Relatively secure
+#    test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+    # Only Barely secure
+    test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
+    test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
+
+    # Join the domain
+    ${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+
+    # Clear credentials
+    ADMIN_PASSWD="nunya"
+    ADMIN_CREDENTIALS="nunya"
+    export ADMIN_PASSWD ADMIN_CREDENTIALS
+    echo "domain join completed"
+}
+
+enable_services () {
+    grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
+    grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
+}
+
+start_services () {
+    enable_services
+    ${RCSAMBA_FILE} stop
+    echo "winbind service stopped"
+}
+
+verify_winbind_online() {
+    counter=0
+    while [ ${counter} -lt 10 ]
+    do
+	WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status 2>/dev/null | grep "${SHORT_DOMAIN} :" | ${PERL} -pe 's/^.*?: //')
+	if [ "${WBSTATUS}" = "online" ] ; then break; fi
+	counter=`expr ${counter} + 1`
+	sleep 10s
+    done
+
+    test "${WBSTATUS}x" = "x" && WBSTATUS=offline
+    echo "winbind ${WBSTATUS}"
+    if [ "${WBSTATUS}" = "offline" ]
+    then
+	rollback
+	return 1
+    else
+	merge_config_files
+	return 0
+    fi
+}
+
+verify_join () {
+
+  # Verify that getent is querying winbind
+  START_TIME=`date +%s`
+  GETENT_OUTPUT=`time /usr/bin/getent passwd ${DOMAIN}/${SSH_USER}`
+  GETENT_RETURN=$?
+  END_TIME=`date +%s`
+  if [ ${GETENT_RETURN} != 0 ]
+  then
+      echo "getent lookup failure"
+      rollback
+  else
+      merge_config_files
+  fi
+  echo "getent latency: "`expr $END_TIME - $START_TIME`" seconds"
+
+  # Verify that id is querying winbind
+  START_TIME=`date +%s`
+  ID_OUTPUT=`time /usr/bin/id ${DOMAIN}/${SSH_USER}`
+  ID_RETURN=$?
+  END_TIME=`date +%s`
+  if [ ${ID_RETURN} != 0 ]
+  then
+      echo "id lookup failure"
+      rollback
+  else
+      merge_config_files
+  fi
+  echo "id latency: "`expr $END_TIME - $START_TIME`" seconds"
+
+  return 0
+}
+
+merge_config_files () {
+    INSTALL_SOURCE=/usr/ports/net/samba3-cjac
+    if [ ! -d ${INSTALL_SOURCE} ]
+    then
+	echo "configuration files not available to be merged"
+	return
+    fi
+
+    cd ${INSTALL_SOURCE}
+
+    # These files must have changes merged in to them if they exist
+    if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
+    if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
+
+    STATUS=verify_join
+
+    if [ ${STATUS} = 1 ] ; then rollback ; fi
+
+    # Update nsswitch.conf after domain has been joined
+    if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
+    if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
+    if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+}
+
+install_nss_modules () {
+
+    # Install libnss_winbind.so and libnss_wins.so
+    for nss_driver in winbind wins
+    do
+	cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
+	ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
+	ln -sf /lib/libnss_${nss_driver}.so /lib/nss_${nss_driver}.so.1
+    done
+
+}
+
+install_pam_modules () {
+
+    # Install pam_winbind.so and pam_smbpass.so
+    for pam_driver in winbind smbpass
+    do
+	cp -f ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so /usr/lib/ > /dev/null 2>&1
+	ln -sf /usr/lib/pam_${pam_driver}.so /usr/lib/pam_${pam_driver}.so.3
+    done
+
+}
+
+create_smbconf_file () {
+
+    if [ ! -e smb.conf      ] ; then ${FETCHER} smb.conf      ${TAOS_RELEASE}/smb.conf      > /dev/null ; fi
+
+    # hard code the netbios name and password server into smb.conf
+    grep -v 'netbios name' smb.conf > /tmp/smb.conf
+    echo "" >> /tmp/smb.conf
+    echo "        netbios name = ${HOSTNAME}" >> /tmp/smb.conf
+    mv /tmp/smb.conf .
+
+    grep -v 'password server' smb.conf > /tmp/smb.conf
+    echo "" >> /tmp/smb.conf
+    echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
+    mv /tmp/smb.conf .
+
+}
+
+create_rcsamba_file () {
+    if [ ! -e samba.sh      ] ; then ${FETCHER} samba.sh      ${TAOS_RELEASE}/samba.sh      > /dev/null ; fi
+}
+
+fetch_config_files () {
+    # Install the configuration files from the Taos project server
+
+    create_smbconf_file
+    create_rcsamba_file
+
+    if [ ! -e krb5.conf     ] ; then ${FETCHER} krb5.conf     ${TAOS_RELEASE}/krb5.conf     > /dev/null ; fi
+    if [ ! -e ntp.conf      ] ; then ${FETCHER} ntp.conf      ${TAOS_RELEASE}/ntp.conf      > /dev/null ; fi
+    if [ ! -e nsswitch.conf ] ; then ${FETCHER} nsswitch.conf ${TAOS_RELEASE}/nsswitch.conf > /dev/null ; fi
+    if [ ! -e ld.so.conf    ] ; then ${FETCHER} ld.so.conf    ${TAOS_RELEASE}/ld.so.conf    > /dev/null ; fi
+    if [ ! -e sshd          ] ; then ${FETCHER} sshd          ${TAOS_RELEASE}/sshd          > /dev/null ; fi
+
+    if [ ${DRYRUN} = 1 ]
+    then
+	for conffile in $SMBCONF_FILE $RCSAMBA_FILE $KRB5CONF_FILE $NTPCONF_FILE $NSSCONF_FILE $LDSOCONF_FILE $PAMSSHD_FILE
+	do
+	    test -f ${conffile} && cp ${conffile} ${conffile}.dryrun
+	done
+    fi
+}
+
+install_smbconf_file () {
+    create_smbconf_file
+    cp smb.conf ${SMBCONF_FILE}
+}
+
+install_service_script () {
+    create_rcsamba_file
+    cp samba.sh ${RCSAMBA_FILE}
+}
+
+ldso_update_hook () {
+    # update dynamic library symbols
+    merge_ldsoconf_file
+    merge_rclocal_file
+    ${LDCONFIG} ${LDSOCONF_FILE}
+}
+
+merge_krb5conf_file () {
+    # Work on Kerberos
+    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
+
+    cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+
+    grep 'dns_lookup_realm[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+				cat ${TEMP_FILE} | sed "s/dns_lookup_realm[ 	]*=.\+/ dns_lookup_realm = true/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+	  fi
+
+    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+				cat ${TEMP_FILE} | sed "s/dns_lookup_kdc[ 	]*=.\+/ dns_lookup_kdc = true/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+
+    fi
+    cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+
+    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+				cat ${TEMP_FILE} | sed "s/default_realm[ 	]*=.\+$/default_realm = ${DOMAIN}/" > ${TEMP_FILE}.1
+				mv ${TEMP_FILE}.1 ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    fi
+
+    grep '\[realms\]' ${TEMP_FILE} > /dev/null
+    if [ $? -eq 0 ]
+    then
+				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    else
+				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
+				echo "[realms]" >> ${TEMP_FILE}
+				echo "${DOMAIN} = {" >> ${TEMP_FILE}
+				for kdc in ${PDCHOSTS}
+				do
+						echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
+						echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
+				done
+				echo "}" >> ${TEMP_FILE}
+
+				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+    fi
+
+    rm ${TEMP_FILE}
+}
+
+merge_ntpconf_file () {
+    # TODO: implement merge_ntpconf_file in merge.pl
+    TEMP_FILE="/tmp/${NTPCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${NTPCONF_FILE} ${BACKUP_DIR}/${NTPCONF_BASENAME}.${TIMESTAMP}
+
+}
+
+merge_nssconf_file () {
+    TEMP_FILE="/tmp/${NSSCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${NSSCONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
+
+    ${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
+    cp -f ${TEMP_FILE} ${NSSCONF_FILE}
+}
+
+merge_ldsoconf_file () {
+
+    if [ ! -e ${LDSOCONF_FILE} ]
+    then
+	cp ld.so.conf ${LDSOCONF_FILE}
+	return
+    fi
+
+    TEMP_FILE="/tmp/${LDSOCONF_BASENAME}.${TIMESTAMP}"
+    cp -f ${LDSOCONF_FILE} ${BACKUP_DIR}/${LDSOCONF_BASENAME}.${TIMESTAMP}
+
+    # update system library search paths and ensure that it is updated on boot
+    for LIBPATH in ${LD_SEARCH_PATH}
+    do
+        grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
+    done
+}
+
+merge_rclocal_file () {
+    RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
+    test ${DRYRUN} = 0 && grep -s "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
+}
+
+merge_pamsshd_file () {
+    TEMP_FILE="/tmp/${PAMSSHD_BASENAME}.${TIMESTAMP}"
+    cp -f ${PAMSSHD_FILE} ${BACKUP_DIR}/${PAMSSHD_BASENAME}.${TIMESTAMP}
+		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
+		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
+}
+
+verify_opt_capacity () {
+    mkdir -p /opt
+    OPT_CAPACITY=`df /opt | tail -1 | awk '{print $4}'`
+    if [ $OPT_CAPACITY -lt 160000 ]
+    then
+	echo "/opt has insufficient capacity for installation"
+	exit
+    fi
+}
+
+promote_bsdtar () {
+    test -f /bin/tar && TAR=/bin/tar
+    test -f /usr/bin/tar && TAR=/usr/bin/tar
+
+    TAR_VERSION=`${TAR} --version`
+    echo ${TAR_VERSION} | grep '^bsdtar' > /dev/null
+    if [ $? != 0  ]
+    then
+	mv ${TAR} ${TAR}.orig.${TIMESTAMP}
+	if [ -f /usr/bin/bsdtar ]
+	then
+	    ln -s /usr/bin/bsdtar ${TAR}
+	else
+	    echo "no /usr/bin/bsdtar.  failing"
+	    exit
+	fi
+    fi
+}
+
+revert_bsdtar () {
+    if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
+    then
+	rm /usr/bin/tar
+	mv /usr/bin/tar.orig.${TIMESTAMP} /usr/bin/tar
+    fi
+}
+
+create_winbind_supportdirs () {
+    for dir in log run cache lib
+    do
+	mkdir -p ${INSTALL_ROOT}/var/${dir}/samba
+    done
+}
+
+install_package () {
+    # Fetch Taos's build of samba 3.5.21
+
+    test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
+
+    PKG_FILE=${MARCH}/${RELEASE}/samba3_${MARCH}.tgz
+    test -f ${PKG_FILE} || ${FETCHER} ${PKG_FILE} ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz > /dev/null
+
+    # cryptographically verify integrity of release package
+    ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
+
+    test "${RELEASE_SHORT}" = "6.3" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_6_3_RELEASE}
+    test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7_1_RELEASE}
+
+    if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
+
+    verify_opt_capacity
+
+    pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
+
+    chmod u+x ${INSTALL_ROOT}/sbin/*
+    chmod a+x ${INSTALL_ROOT}/bin/*
+
+}
+
+install_dependencies () {
+
+    # Check if perl is originally installed
+    ORIGINAL_PERL=`which perl`
+
+    # if not, add it to the dependency list
+    test "${ORIGINAL_PERL}x" = 'x' && DEP_PKG_LIST="${DEP_PKG_LIST} perl"
+    test "${ORIGINAL_PERL}x" = 'x' && echo "installing perl temporarily"
+
+    # Install dependencies - TODO: determind whether these are installed before doing so
+    for pkg in ${DEP_PKG_LIST}
+    do
+    # install perl independent of INSTALL_DEPS being set
+	test ${pkg} != 'perl' && test ${INSTALL_DEPS} = 0 && continue;
+
+	test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
+	test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
+	test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz >/dev/null 2>&1
+	pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz >/dev/null 2>&1
+    done
+
+}
+
+sync_clocks () {
+
+    # Synchronize clocks
+    if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
+    ${NTPDATE} ${NTPHOST} > /dev/null 2>&1
+
+}

@@ -314,18 +314,21 @@ then
   if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
 
   # Verify that getent is querying winbind
+  START_TIME=`date +%s`
   GETENT_OUTPUT=`time /usr/bin/getent passwd ${DOMAIN}/${SSH_USER}`
+  END_TIME=`date +%s`
+  echo "getent latency: "`expr $END_TIME - $START_TIME`" seconds"
 
   if [ $? != 0 ] ; then rollback; exit ; fi
-  GETENT_LATENCY=`echo "${GETENT_OUTPUT}" | tail -1 | awk '{print $3}'`
-  echo "getent latency: ${GETENT_LATENCY}"
 
   # Verify that id is querying winbind
+  START_TIME=`date +%s`
   ID_OUTPUT=`time /usr/bin/id ${DOMAIN}/${SSH_USER}`
+  END_TIME=`date +%s`
+  echo "id latency: "`expr $END_TIME - $START_TIME`" seconds"
 
   if [ $? != 0 ] ; then rollback; exit ; fi
-  ID_LATENCY=`echo "${ID_OUTPUT}" | tail -1 | awk '{print $3}'`
-  echo "id latency: ${ID_LATENCY}"
+
 fi
 
 # clean up perl if it was not originally installed

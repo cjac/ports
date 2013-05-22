@@ -23,6 +23,11 @@ stop_services () {
     echo "winbind service stopped"
 }
 
+enable_services () {
+    grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
+    grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
+}
+
 disable_services () {
     TEMP_FILE=/tmp/rc.conf.${TIMESTAMP}
     cp ${RCCONF_FILE} ${TEMP_FILE}

@@ -94,7 +94,8 @@ verify_join () {
   else
       echo "getent lookup successful"
   fi
-  echo "getent latency: "`expr $END_TIME - $START_TIME`" seconds"
+  GETENT_LATENCY=`expr $END_TIME - $START_TIME`
+  echo "getent latency: ${GETENT_LATENCY} seconds"
 
   # Verify that id is querying winbind
   START_TIME=`date +%s`
@@ -105,11 +106,22 @@ verify_join () {
   then
       echo "id lookup failure"
       rollback
-      return
+      return 1
   else
       echo "id lookup successful"
   fi
-  echo "id latency: "`expr $END_TIME - $START_TIME`" seconds"
+  ID_LATENCY=`expr $END_TIME - $START_TIME`
+  echo "id latency: ${ID_LATENCY} seconds"
+
+  test ${GETENT_LATENCY} -gt 0 && HIGH_LATENCY=1
+  test ${ID_LATENCY} -gt 0 && HIGH_LATENCY=1
+
+  if [ ${HIGH_LATENCY} = 1 ]
+  then
+      echo "active directory latency above nominal levels.  rolling back."
+      rollback
+      return 1
+  fi
 
   echo "domain ${DOMAIN} join successful"
   return 0

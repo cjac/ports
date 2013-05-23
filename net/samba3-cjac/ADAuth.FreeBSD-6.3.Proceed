@@ -113,8 +113,8 @@ verify_join () {
   ID_LATENCY=`expr $END_TIME - $START_TIME`
   echo "id latency: ${ID_LATENCY} seconds"
 
-  test ${GETENT_LATENCY} -gt 0 && HIGH_LATENCY=1
-  test ${ID_LATENCY} -gt 0 && HIGH_LATENCY=1
+  test ${GETENT_LATENCY} -gt 2 && HIGH_LATENCY=1
+  test ${ID_LATENCY} -gt 2 && HIGH_LATENCY=1
 
   if [ ${HIGH_LATENCY} = 1 ]
   then

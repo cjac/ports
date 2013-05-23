@@ -3,6 +3,7 @@
 test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
 
 join_domain () {
+    echo "joining ${DOMAIN} active directory domain"
     # Secure credentials
     ADMIN_CREDENTIALS=${ADMIN_USER}
     # Quite secure
@@ -16,25 +17,45 @@ join_domain () {
     # Join the domain
     ${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
+    JOIN_STATUS=$?
+
     # Clear credentials
     ADMIN_PASSWD="nunya"
     ADMIN_CREDENTIALS="nunya"
     export ADMIN_PASSWD ADMIN_CREDENTIALS
-    echo "domain join completed"
+
+    if [ ${JOIN_STATUS} = 0 ]
+    then
+	echo "domain join completed successfully"
+    else
+	echo "domain join completed unsuccessfully"
+    fi
 }
 
 enable_services () {
+    echo "enabling samba and winbind services"
     grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
     grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
+    echo "services enabled"
 }
 
 start_services () {
     enable_services
-    ${RCSAMBA_FILE} stop
-    echo "winbind service stopped"
+
+    SERVICE_STATUS=`${RCSAMBA_FILE} status`
+    echo "${SERVICE_STATUS}" | grep -v 'not running' > /dev/null 2>&1
+    if [ $? = 0 ]
+    then
+	stop_services
+    fi
+
+    echo "starting samba and winbind services"
+    ${RCSAMBA_FILE} start > /dev/null 2>&1
+    echo "samba and winbind services started"
 }
 
 verify_winbind_online() {
+    echo "verifying that winbind is online"
     counter=0
     while [ ${counter} -lt 10 ]
     do
@@ -45,20 +66,22 @@ verify_winbind_online() {
     done
 
     test "${WBSTATUS}x" = "x" && WBSTATUS=offline
-    echo "winbind ${WBSTATUS}"
     if [ "${WBSTATUS}" = "offline" ]
     then
-	rollback
+	echo "domain ${DOMAIN} not online via winbind"
 	return 1
     else
+	echo "domain ${DOMAIN} online via winbind"
 	merge_config_files
 	return 0
     fi
 }
 
 verify_join () {
-
+  echo "verifying that winbind is performing account lookups"
   # Verify that getent is querying winbind
+  merge_config_files
+
   START_TIME=`date +%s`
   GETENT_OUTPUT=`time /usr/bin/getent passwd ${DOMAIN}/${SSH_USER}`
   GETENT_RETURN=$?
@@ -67,8 +90,9 @@ verify_join () {
   then
       echo "getent lookup failure"
       rollback
+      return
   else
-      merge_config_files
+      echo "getent lookup successful"
   fi
   echo "getent latency: "`expr $END_TIME - $START_TIME`" seconds"
 
@@ -81,11 +105,13 @@ verify_join () {
   then
       echo "id lookup failure"
       rollback
+      return
   else
-      merge_config_files
+      echo "id lookup successful"
   fi
   echo "id latency: "`expr $END_TIME - $START_TIME`" seconds"
 
+  echo "domain ${DOMAIN} join successful"
   return 0
 }
 
@@ -311,6 +337,7 @@ verify_opt_capacity () {
     if [ $OPT_CAPACITY -lt 160000 ]
     then
 	echo "/opt has insufficient capacity for installation"
+	clean_up_perl
 	exit
     fi
 }
@@ -329,6 +356,7 @@ promote_bsdtar () {
 	    ln -s /usr/bin/bsdtar ${TAR}
 	else
 	    echo "no /usr/bin/bsdtar.  failing"
+	    clean_up_perl
 	    exit
 	fi
     fi
@@ -350,6 +378,7 @@ create_winbind_supportdirs () {
 }
 
 install_package () {
+    echo "installing taos samba3 package"
     # Fetch Taos's build of samba 3.5.21
 
     test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
@@ -363,7 +392,12 @@ install_package () {
     test "${RELEASE_SHORT}" = "6.3" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_6_3_RELEASE}
     test "${RELEASE_SHORT}" = "7.1" && EXPECTED_SHA256_HASH=${EXPECTED_SHA256_HASH_7_1_RELEASE}
 
-    if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
+    if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ]
+    then
+	echo "crypto hash comparison failure"
+	clean_up_perl
+	exit 1
+    fi
 
     verify_opt_capacity
 
@@ -371,6 +405,27 @@ install_package () {
 
     chmod u+x ${INSTALL_ROOT}/sbin/*
     chmod a+x ${INSTALL_ROOT}/bin/*
+    echo "package installed"
+}
+
+verify_package_installation () {
+
+    # Verify that samba was installed as expected
+    EXPECTED_SAMBA_VERSION='Version 3.5.21'
+    ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`
+
+    if [ $? != 0 ]
+    then
+	echo "run of net command failed"
+	clean_up_perl
+	exit 1
+    fi
+    if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ]
+    then
+	echo "samba version unrecognized" ;
+	clean_up_perl
+	exit 1 
+    fi
 
 }
 
@@ -402,5 +457,18 @@ sync_clocks () {
     # Synchronize clocks
     if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
     ${NTPDATE} ${NTPHOST} > /dev/null 2>&1
+
+}
+
+
+clean_up_perl () {
+
+    # clean up perl if it was not originally installed
+    if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]
+    then
+	echo "removing perl"
+	PKG_NAME=`pkg_info | grep '^perl-5' | awk '{print $1}'`
+	test "${PKG_NAME}x" = "x" || pkg_delete ${PKG_NAME} > /dev/null 2>&1
+    fi
 
 }

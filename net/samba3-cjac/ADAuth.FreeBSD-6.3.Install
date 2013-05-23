@@ -28,12 +28,7 @@ create_winbind_supportdirs
 PERL=`which perl`
 PERL_VERSION=`${PERL} -e 'print "$]\n"'`
 
-# Verify that samba was installed as expected
-EXPECTED_SAMBA_VERSION='Version 3.5.21'
-ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`
-
-if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
-if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
+verify_package_installation
 
 BACKUP_DIR="${PWD}/Backup_Files"
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
@@ -57,27 +52,10 @@ sync_clocks
 
 join_domain
 
-enable_services
-
 start_services
 
-STATUS=verify_winbind_online
+verify_winbind_online
 
-if [ ${STATUS} = 0 ]
-then
-    echo "domain ${DOMAIN} online via winbind"
-fi
+verify_join
 
-STATUS=verify_join
-if [ ${STATUS} = 0 ]
-then
-    echo "joined ${DOMAIN} domain successfully"
-fi
-
-# clean up perl if it was not originally installed
-if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]
-then
-  echo "removing perl"
-  PKG_NAME=`pkg_info | grep '^perl-5' | awk '{print $1}'`
-  test "${PKG_NAME}x" = "x" || pkg_delete ${PKG_NAME} > /dev/null 2>&1
-fi
+clean_up_perl

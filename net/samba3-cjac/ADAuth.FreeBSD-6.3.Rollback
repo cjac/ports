@@ -19,8 +19,9 @@ leave_domain () {
 }
 
 stop_services () {
-    ${RCSAMBA_FILE} stop
-    echo "winbind service stopped"
+    echo "stopping samba and winbind services"
+    ${RCSAMBA_FILE} stop > /dev/null 2>&1
+    echo "samba and winbind services stopped"
 }
 
 disable_services () {
@@ -118,8 +119,9 @@ uninstall_package () {
 	echo "samba3 package not provided by Taos.  Will not remove."
 	return
     fi
+    echo "removing taos samba3 package"
 
-    pkg_delete samba3
+    pkg_delete samba3 > /dev/null 2>&1
 
     if [ $? = 0 ]
     then

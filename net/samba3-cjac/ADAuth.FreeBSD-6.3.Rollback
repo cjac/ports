@@ -1,0 +1,144 @@
+#!/bin/sh
+
+# source common environment details
+test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
+
+leave_domain () {
+    # Leave the domain
+    ADMIN_CREDENTIALS=${ADMIN_USER}
+    test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
+    test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
+
+    ${SAMBA_RUNNER} net ads leave -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+
+    # Clear credentials
+    ADMIN_PASSWD="nunya"
+    ADMIN_CREDENTIALS="nunya"
+    export ADMIN_PASSWD ADMIN_CREDENTIALS
+    echo "domain disjoin completed"
+}
+
+stop_services () {
+    echo "stopping samba and winbind services"
+    ${RCSAMBA_FILE} stop > /dev/null 2>&1
+    echo "samba and winbind services stopped"
+}
+
+disable_services () {
+    stop_services
+    TEMP_FILE=/tmp/rc.conf.${TIMESTAMP}
+    cp ${RCCONF_FILE} ${TEMP_FILE}
+    grep -v 'samba_enable="YES"' ${TEMP_FILE} > /tmp/rc.conf
+    mv /tmp/rc.conf ${TEMP_FILE}
+    grep -v 'winbindd_enable="YES"' ${TEMP_FILE} > /tmp/rc.conf
+    mv /tmp/rc.conf ${TEMP_FILE}
+
+    LEN_TEMP_FILE=`wc -l ${TEMP_FILE}`
+    LEN_RCCONF_FILE=`wc -l ${RCCONF_FILE}`
+
+    LEN_EXPECTED=`expr ${LEN_TEMP_FILE} - 2`
+
+    if [ ${LEN_RCCONF_FILE} != ${LEN_EXPECTED} ]
+    then
+	echo "unexpected results when removing services from ${RCCONF_FILE}.  Not rolled back."
+    fi
+
+    mv ${TEMP_FILE} ${RCCONF_FILE}
+    echo "samba/winbind service disabled"
+}
+
+restore_config_files () {
+    INSTALL_SOURCE=/usr/ports/net/samba3-cjac
+    if [ ! -d ${INSTALL_SOURCE} ]
+    then
+	echo "configuration files not available to be restored"
+	return
+    fi
+
+    cd ${INSTALL_SOURCE}
+    CONFDIR=/etc
+    for CONF in krb5.conf ld.so.conf ntp.conf nsswitch.conf sshd
+    do
+	INITIAL_CONF=`ls ${INSTALL_SOURCE}/Backup_Files/${CONF}* | sort -n | head -1`
+	test "${INITIAL_CONF}x" = "x" && continue
+	echo -n "${CONF} "
+	test "${CONF}" = "sshd" && CONFDIR=/etc/pam.d/
+	mv ${CONFDIR}/${CONF} ${CONFDIR}/${CONF}.rollback.`date +%s`
+	cp ${INITIAL_CONF} ${CONFDIR}/${CONF}
+    done
+    
+    echo "configuration files restored"
+}
+
+remove_pam_modules () {
+    for pam_driver in winbind smbpass
+    do
+	TAOS_PAM_DRIVER_SHA256=`sha256 ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so | awk '{print $4}'`
+	THIS_PAM_DRIVER_SHA256=`sha256 /usr/lib/pam_${pam_driver}.so | awk '{print $4}'`
+
+	if [ ${TAOS_PAM_DRIVER_SHA256} != ${THIS_PAM_DRIVER_SHA256} ]
+	then
+	    echo "pam_${pam_driver}.so unrecognized.  not rolling back."
+	    continue
+	fi
+
+	rm -f /usr/lib/pam_${pam_driver}.so.3 /usr/lib/pam_${pam_driver}.so
+    done
+
+    echo "pam module installation rollback completed."
+}
+
+remove_nss_modules () {
+    for nss_driver in winbind wins
+    do
+	TAOS_NSS_DRIVER_SHA256=`sha256 ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so | awk '{print $4}'`
+	THIS_NSS_DRIVER_SHA256=`sha256 /lib/libnss_${nss_driver}.so | awk '{print $4}'`
+
+	if [ ${TAOS_PAM_DRIVER_SHA256} != ${THIS_PAM_DRIVER_SHA256} ]
+	then
+	    echo "libnss_${nss_driver}.so unrecognized.  not rolling back."
+	    continue
+	fi
+
+	rm -f /lib/libnss_${nss_driver}.so /lib/nss_${nss_driver}.so.1 /lib/libnss_${nss_driver}.so.2
+    done
+
+    echo "nss module installation rollback completed."
+}
+
+uninstall_package () {
+    PKG_INFO=`pkg_info samba3`
+    if [ $? != 0 ]
+    then
+	echo "samba3 package not installed."
+	return
+    fi
+    echo ${PKG_INFO} | grep 'colliertech.org' > /dev/null
+    if [ $? != 0 ]
+    then
+	echo "samba3 package not provided by Taos.  Will not remove."
+	return
+    fi
+    echo "removing taos samba3 package"
+
+    pkg_delete samba3 > /dev/null 2>&1
+
+    if [ $? = 0 ]
+    then
+	echo "package deletion completed successfully"
+    else
+	echo "package deletion completed unsuccessfully"
+    fi
+}
+
+purge_install_root () {
+    rm -rf ${INSTALL_ROOT}
+    echo "${INSTALL_ROOT} directory purged"
+}
+
+rollback () {
+#    stop_services
+#    disable_services
+    restore_config_files
+}
+

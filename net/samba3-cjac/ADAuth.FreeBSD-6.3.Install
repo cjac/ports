@@ -1,144 +1,25 @@
 #!/bin/sh
 
-#
-#   Platform-independent code
-#
+# source common environment details
+test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
 
-# Change the following if releases are deployed from elsewhere
-TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
-DOMAIN=ESD.COLLIERTECH.ORG
-SHORT_DOMAIN=ESD
-ADMIN_USER=cjac
-GPG_SERVER=foxtrot.esd.colliertech.org
-SSH_USER=cjac
-WINBIND_WAIT_TIME=10s
-EXPECTED_SHA256_HASH=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
-DRYRUN=0
-INSTALL_DEPS=1
-HOSTNAME=`hostname -s`
-TIMESTAMP=$(date +%Y-%m-%d.%H%M%S)
+# source Rollback functions
+. ./ADAuth.FreeBSD-6.3.Rollback
 
-#
-#   truncate long hostnames by getting rid of vowels
-#
-HOSTNAME_LEN=`echo ${HOSTNAME}|wc -c`
-test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g'`
+# source Proceed functions
+. ./ADAuth.FreeBSD-6.3.Proceed
 
-grep -i -E 'netbios\s+name\s+=' smb.conf >/dev/null || echo "" >> smb.conf ; echo "        netbios name = ${HOSTNAME}" >> smb.conf
+uninstall_package
 
-#
-#   If this is set, encrypt the admin password in a file named ~{$SSH_USER}/${BLACK_KEY}
-#
-#   $ mkdir ~/auth
-#   $ gpg --encrypt -a -r cjac@colliertech.org > ~/auth/cjac_ESD.COLLIERTECH.ORG.gpg
-#   <type password here>
-#   ^D
-UNATTENDED=1
-BLACK_KEY="auth/${ADMIN_USER}_${DOMAIN}.gpg"
+promote_bsdtar
 
-PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
-grep -v '^;' |
-awk '{print $4}' | 
-sed -e 's/\.$//'`
-PDCHOST=`echo $PDCHOSTS | awk '{print $1}`
-NTPHOST=${PDCHOST}
+install_dependencies
 
-# create somewhere for log4perl to dump its logs
-if [ ! -d log ] ; then mkdir log ; fi
-chmod a+rwx log
+install_package
 
-test -f log4perl.conf || cat > log4perl.conf <<EOF
-log4perl.rootLogger=DEBUG, LOGFILE
+revert_bsdtar
 
-log4perl.appender.LOGFILE=Log::Log4perl::Appender::File
-log4perl.appender.LOGFILE.filename=log/merge.log
-log4perl.appender.LOGFILE.mode=append
-
-log4perl.appender.LOGFILE.layout=PatternLayout
-log4perl.appender.LOGFILE.layout.ConversionPattern=[%d] %F %L %c - %m%n
-EOF
-
-#
-#   FreeBSD 6.3-specific code
-#
-
-PLATFORM=`uname`
-RELEASE=`uname -r | sed -e 's/RELEASE.*$/RELEASE/`
-RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
-MARCH=`uname -m`
-FETCHER="fetch -o"
-INSTALL_ROOT=/opt/taos/samba3
-LD_SEARCH_PATH="/lib /usr/lib ${INSTALL_ROOT}/lib"
-LDCONFIG="ldconfig -m"
-NTPDATE=ntpdate
-DEP_PKG_LIST='heimdal cyrus-sasl ntp libiconv db46'
-
-# PACKAGESITE is used by pkg_add -r
-PACKAGESITE=ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/${MARCH}/${RELEASE}/packages/Latest/
-export PACKAGESITE
-
-TAR_VERSION=`/usr/bin/tar --version`
-echo ${TAR_VERSION} | grep '^bsdtar' > /dev/null
-if [ $? != 0  ]
-then
-  mv /usr/bin/tar /usr/bin/tar.orig.${TIMESTAMP}
-  if [ -f /usr/bin/bsdtar ]
-  then
-    ln -s /usr/bin/bsdtar /usr/bin/tar
-  else
-    echo "no /usr/bin/bsdtar.  failing"
-  fi
-fi
-
-test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
-
-# Check if perl is originally installed
-ORIGINAL_PERL=`which perl`
-
-# if not, add it to the dependency list
-test "${ORIGINAL_PERL}x" = 'x' && DEP_PKG_LIST="${DEP_PKG_LIST} perl"
-test "${ORIGINAL_PERL}x" = 'x' && echo "installing perl temporarily"
-
-# Install dependencies - TODO: determind whether these are installed before doing so
-for pkg in ${DEP_PKG_LIST}
-do
-    # install perl independent of INSTALL_DEPS being set
-    test ${pkg} != 'perl' && test ${INSTALL_DEPS} = 0 && continue;
-
-    test ${RELEASE} = '6.4-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
-    test ${RELEASE} = '7.1-RELEASE' && test ${pkg} = 'cyrus-sasl' && pkg='cyrus-sasl2'
-    test -f ${MARCH}/${RELEASE}/${pkg}.tbz || ${FETCHER} ${MARCH}/${RELEASE}/${pkg}.tbz ${PACKAGESITE}${pkg}.tbz >/dev/null 2>&1
-    pkg_info | grep "^$pkg-" >/dev/null || pkg_add ${MARCH}/${RELEASE}/${pkg}.tbz >/dev/null 2>&1
-done
-
-# Fetch Taos's build of samba 3.5.21
-test -f ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz || ${FETCHER} ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz ${TAOS_RELEASE}/${PLATFORM}-${RELEASE_SHORT}/samba3_${MARCH}.tgz > /dev/null
-
-# cryptographically verify integrity of release package
-ACTUAL_SHA256_HASH=`sha256 ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz | awk '{print $4}'`
-if [ ${EXPECTED_SHA256_HASH} != ${ACTUAL_SHA256_HASH} ] ; then echo "crypto hash comparison failure" ; exit 1 ; fi
-
-pkg_info | grep -E '^samba3 +this' >/dev/null
-
-if [ $? -eq 0 ]
-then
-		pkg_delete samba3 > /dev/null 2>&1
-fi
-
-pkg_add ${MARCH}/${RELEASE}/samba3_${MARCH}.tgz > /dev/null 2>&1
-
-if [ -f /usr/bin/tar.orig.${TIMESTAMP} ]
-then
-  rm /usr/bin/tar
-  mv /usr/bin/tar.orig.${TIMESTAMP} /usr/bin/tar
-fi
-
-for dir in log run cache lib
-do
-    mkdir -p ${INSTALL_ROOT}/var/${dir}/samba
-done
-
-SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
+create_winbind_supportdirs
 
 #
 #  Platform indepdendent code
@@ -147,235 +28,34 @@ SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
 PERL=`which perl`
 PERL_VERSION=`${PERL} -e 'print "$]\n"'`
 
-# Verify that samba was installed as expected
-EXPECTED_SAMBA_VERSION='Version 3.5.21'
-ACTUAL_SAMBA_VERSION=`${SAMBA_RUNNER} net -V`
-
-if [ $? != 0 ] ; then echo "run of net command failed" ; exit 1 ; fi
-if [ "${EXPECTED_SAMBA_VERSION}" != "${ACTUAL_SAMBA_VERSION}" ] ; then echo "samba version unrecognized" ; exit 1 ; fi
+verify_package_installation
 
 BACKUP_DIR="${PWD}/Backup_Files"
 test -d ${BACKUP_DIR} || mkdir ${BACKUP_DIR}
 
-merge_krb5conf_file () {
-    # Work on Kerberos
-    TEMP_FILE="/tmp/${KRB5CONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${KRB5CONF_FILE} ${BACKUP_DIR}/${KRB5CONF_BASENAME}.${TIMESTAMP}
 
-    cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
+install_nss_modules
 
-    grep 'dns_lookup_realm[ 	]*=' ${TEMP_FILE} > /dev/null
-    if [ $? -eq 0 ]
-    then
-				cat ${TEMP_FILE} | sed "s/dns_lookup_realm[ 	]*=.\+/ dns_lookup_realm = true/" > ${TEMP_FILE}.1
-				mv ${TEMP_FILE}.1 ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-    else
-				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-	  fi
+install_pam_modules
 
-    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
-    if [ $? -eq 0 ]
-    then
-				cat ${TEMP_FILE} | sed "s/dns_lookup_kdc[ 	]*=.\+/ dns_lookup_kdc = true/" > ${TEMP_FILE}.1
-				mv ${TEMP_FILE}.1 ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-    else
-				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
+fetch_config_files
 
-    fi
-    cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
-
-    grep 'dns_lookup_kdc[ 	]*=' ${TEMP_FILE} > /dev/null
-    if [ $? -eq 0 ]
-    then
-				cp -f ${KRB5CONF_FILE} ${TEMP_FILE} 
-				cat ${TEMP_FILE} | sed "s/default_realm[ 	]*=.\+$/default_realm = ${DOMAIN}/" > ${TEMP_FILE}.1
-				mv ${TEMP_FILE}.1 ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-    else
-				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-    fi
-
-    grep '\[realms\]' ${TEMP_FILE} > /dev/null
-    if [ $? -eq 0 ]
-    then
-				${PERL} merge.pl krb5conf ${KRB5CONF_FILE} ${TEMP_FILE}
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}
-    else
-				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
-				echo "[realms]" >> ${TEMP_FILE}
-				echo "${DOMAIN} = {" >> ${TEMP_FILE}
-				for kdc in ${PDCHOSTS}
-				do
-						echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
-						echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
-				done
-				echo "}" >> ${TEMP_FILE}
-				
-				cp -f ${TEMP_FILE} ${KRB5CONF_FILE}	
-    fi
-
-    rm ${TEMP_FILE}
-}
-
-merge_ntpconf_file () {
-    # TODO: implement merge_ntpconf_file in merge.pl
-    TEMP_FILE="/tmp/${NTPCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${NTPCONF_FILE} ${BACKUP_DIR}/${NTPCONF_BASENAME}.${TIMESTAMP}
-
-}
-
-merge_nssconf_file () {
-    TEMP_FILE="/tmp/${NSSCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${NSSCONF_FILE} ${BACKUP_DIR}/${NSSCONF_BASENAME}.${TIMESTAMP}
-
-    ${PERL} merge.pl nssconf ${NSSCONF_FILE} ${TEMP_FILE}
-    cp -f ${TEMP_FILE} ${NSSCONF_FILE}
-}
-
-merge_ldsoconf_file () {
-    TEMP_FILE="/tmp/${LDSOCONF_BASENAME}.${TIMESTAMP}"
-    cp -f ${LDSOCONF_FILE} ${BACKUP_DIR}/${LDSOCONF_BASENAME}.${TIMESTAMP}
-
-    # update system library search paths and ensure that it is updated on boot
-    for LIBPATH in ${LD_SEARCH_PATH}
-    do
-        grep ${LIBPATH} ${LDSOCONF_FILE} >/dev/null || echo ${LIBPATH} >> ${LDSOCONF_FILE}
-    done
-}
-
-merge_pamsshd_file () {
-    TEMP_FILE="/tmp/${PAMSSHD_BASENAME}.${TIMESTAMP}"
-    cp -f ${PAMSSHD_FILE} ${BACKUP_DIR}/${PAMSSHD_BASENAME}.${TIMESTAMP}
-		${PERL} merge.pl pamconf ${PAMSSHD_FILE} ${TEMP_FILE}
-		cp -f ${TEMP_FILE} ${PAMSSHD_FILE}
-}
-
-enable_services () {
-    grep 'samba_enable="YES"' ${RCCONF_FILE} >/dev/null    || echo 'samba_enable="YES"'    >> ${RCCONF_FILE}
-    grep 'winbindd_enable="YES"' ${RCCONF_FILE} >/dev/null || echo 'winbindd_enable="YES"' >> ${RCCONF_FILE}
-}
-
-RCDIR=/etc/rc.d
-RCLOCAL_FILE=/etc/rc.local
-RCCONF_FILE=/etc/rc.conf
-
-KRB5CONF_DIR=/etc
-KRB5CONF_BASENAME=krb5.conf
-NTPCONF_BASENAME=ntp.conf
-LDSOCONF_BASENAME=ld.so.conf
-PAMSSHD_BASENAME=sshd
-NSSCONF_BASENAME=nsswitch.conf
-KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
-
-SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
-RCSAMBA_FILE=${RCDIR}/samba
-NTPCONF_FILE=/etc/${NTPCONF_BASENAME}
-LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
-PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
-NSSCONF_FILE=/etc/${NSSCONF_BASENAME}
-
-# Install libnss_winbind.so and libnss_wins.so
-for nss_driver in winbind wins
-do
-    cp ${INSTALL_ROOT}/lib/libnss_${nss_driver}.so /lib
-    ln -sf /lib/libnss_${nss_driver}.so /lib/libnss_${nss_driver}.so.2
-    ln -sf /lib/libnss_${nss_driver}.so /lib/nss_${nss_driver}.so.1
-done
-
-# Install pam_winbind.so and pam_smbpass.so
-for pam_driver in winbind smbpass
-do
-    cp -f ${INSTALL_ROOT}/lib/security/pam_${pam_driver}.so /usr/lib/ > /dev/null 2>&1
-    ln -sf /usr/lib/pam_${pam_driver}.so /usr/lib/pam_${pam_driver}.so.3
-done
-
-# Install the configuration files from the Taos project server
-
-if [ ! -e smb.conf      ] ; then ${FETCHER} smb.conf      ${TAOS_RELEASE}/smb.conf      > /dev/null ; fi
-if [ ! -e samba.sh      ] ; then ${FETCHER} samba.sh      ${TAOS_RELEASE}/samba.sh      > /dev/null ; fi
-if [ ! -e krb5.conf     ] ; then ${FETCHER} krb5.conf     ${TAOS_RELEASE}/krb5.conf     > /dev/null ; fi
-if [ ! -e ntp.conf      ] ; then ${FETCHER} ntp.conf      ${TAOS_RELEASE}/ntp.conf      > /dev/null ; fi
-if [ ! -e nsswitch.conf ] ; then ${FETCHER} nsswitch.conf ${TAOS_RELEASE}/nsswitch.conf > /dev/null ; fi
-if [ ! -e ld.so.conf    ] ; then ${FETCHER} ld.so.conf    ${TAOS_RELEASE}/ld.so.conf    > /dev/null ; fi
-if [ ! -e sshd          ] ; then ${FETCHER} sshd          ${TAOS_RELEASE}/sshd          > /dev/null ; fi
-
-if [ ${DRYRUN} = 1 ]
-then
-		for conffile in $SMBCONF_FILE $RCSAMBA_FILE $KRB5CONF_FILE $NTPCONF_FILE $NSSCONF_FILE $LDSOCONF_FILE $PAMSSHD_FILE
-		do
-				test -f ${conffile} && cp ${conffile} ${conffile}.dryrun
-		done
-fi
-
-test ${DRYRUN} = 1 && SMBCONF_FILE="${SMBCONF_FILE}.dryrun"
-test ${DRYRUN} = 1 && RCSAMBA_FILE="${RCSAMBA_FILE}.dryrun"
-test ${DRYRUN} = 1 && KRB5CONF_FILE="${KRB5CONF_FILE}.dryrun"
-test ${DRYRUN} = 1 && NTPCONF_FILE="${NTPCONF_FILE}.dryrun"
-test ${DRYRUN} = 1 && NSSCONF_FILE="${NSSCONF_FILE}.dryrun"
-test ${DRYRUN} = 1 && LDSOCONF_FILE="${LDSOCONF_FILE}.dryrun"
-test ${DRYRUN} = 1 && PAMSSHD_FILE="${PAMSSHD_FILE}.dryrun"
+create_smbconf_file
 
 # over-write the samba config and service launcher
-cp smb.conf ${SMBCONF_FILE}
-cp samba.sh ${RCSAMBA_FILE}
+install_smbconf_file
+install_service_script
 
-# These files must have changes merged in to them if they exist
-if [ -e ${KRB5CONF_FILE} ] ; then merge_krb5conf_file ; else cp krb5.conf     ${KRB5CONF_FILE} ; fi
-if [ -e ${NTPCONF_FILE}  ] ; then merge_ntpconf_file  ; else cp ntp.conf      ${NTPCONF_FILE}  ; fi
-if [ -e ${LDSOCONF_FILE} ] ; then merge_ldsoconf_file ; else cp ld.so.conf    ${LDSOCONF_FILE} ; fi
-if [ -e ${PAMSSHD_FILE}  ] ; then merge_pamsshd_file  ; else cp sshd          ${PAMSSHD_FILE}  ; fi
+ldso_update_hook
 
-# update dynamic library symbols
-RCLOCAL_LINE="${LDCONFIG} ${LDSOCONF_FILE}"
-test ${DRYRUN} = 0 && grep -s "${RCLOCAL_LINE}" ${RCLOCAL_FILE} > /dev/null || echo "$RCLOCAL_LINE" >> ${RCLOCAL_FILE}
-${LDCONFIG} ${LDSOCONF_FILE}
+sync_clocks
 
-# Synchronize clocks
-${NTPDATE} ${NTPHOST} > /dev/null 2>&1
+join_domain
 
-# Secure credentials
-#eval `SHELL=/bin/sh ./keychain -q --eval`
-#test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`ssh -qt ${SSH_USER}@${GPG_SERVER} gpg --batch --decrypt ${BLACK_KEY} 2\\>/dev/null | sed -e 's/.$//'`
-test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`su - ${SSH_USER} -c "gpg --decrypt ${BLACK_KEY}" 2\\>/dev/null`
+start_services
 
-# Join the domain
-ADMIN_CREDENTIALS=${ADMIN_USER}
-test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
-${SAMBA_RUNNER} net ads join -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+verify_winbind_online
 
-# Update nsswitch.conf after domain has been joined
-if [ -e ${NSSCONF_FILE}  ] ; then merge_nssconf_file  ; else cp nsswitch.conf ${NSSCONF_FILE}  ; fi
+verify_join
 
-# Clear credentials
-ADMIN_PASSWD="nunya"
-export ADMIN_PASSWD
-
-enable_services
-
-# start services
-${RCSAMBA_FILE} restart > /dev/null 2>&1
-
-counter=0
-while [ ${counter} -lt 10 ]
-do
-    WBSTATUS=$(${SAMBA_RUNNER} wbinfo --online-status 2>/dev/null | grep "${SHORT_DOMAIN} :" | ${PERL} -pe 's/^.*?: //')
-    if [ "${WBSTATUS}" = "online" ] ; then break; fi
-    counter=`expr ${counter} + 1`
-    sleep 10s
-done
-
-test "${WBSTATUS}x" = "x" && WBSTATUS=offline
-echo "winbind ${WBSTATUS}"
-
-# clean up perl if it was not originally installed
-if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]
-then
-  echo "removing perl"
-  PKG_NAME=`pkg_info | grep '^perl-5' | awk '{print $1}'`
-  test "${PKG_NAME}x" = "x" || pkg_delete ${PKG_NAME} > /dev/null 2>&1
-fi
+clean_up_perl

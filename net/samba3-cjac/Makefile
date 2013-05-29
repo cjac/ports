@@ -50,6 +50,8 @@ inst: ${.CURDIR}/env
 	cp -f ${WKDIR}/samba-3.5.21/source3/bin/ldap.so ${PREFIX}/lib/samba/idmap
 	cp -f ${WKDIR}/samba-3.5.21/source3/bin/rid.so ${PREFIX}/lib/samba/idmap
 	cp -f ${WKDIR}/samba-3.5.21/source3/bin/tdb2.so ${PREFIX}/lib/samba/idmap
+	chmod a+x ${PREFIX}/bin/*
+	chmod u+x ${PREFIX}/sbin/*
 
 install: inst ${.CURDIR}/pkg-plist
 

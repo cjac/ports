@@ -1,15 +1,20 @@
 # $FreeBSD$
 
+SAMBA_VERSION=3.5.21
+OPENLDAP_VERSION=2.4.17
+
 PORTNAME=	samba3-cjac
-PORTVERSION=	3.5.21
+PORTVERSION=	${SAMBA_VERSION}
 CATEGORIES=	net
 MASTER_SITES=	http://www.colliertech.org/~cjac/src/samba3_bsd6/
 
-MAINTAINER=	cjac@colliertech.org
-COMMENT= backport of samba3 and dependencies to FreeBSD 6.3
+MAINTAINER=cjac@colliertech.org
+COMMENT=backport of samba3 and dependencies to FreeBSD 6.3+
 
-PREFIX=        /opt/taos/samba3
-WKDIR  ?= /usr/ports/net/samba3-cjac/work/samba3-cjac-3.5.21
+PREFIX=/opt/taos/samba3
+WKDIR := /usr/ports/net/samba3-cjac/work/samba3-cjac-${SAMBA_VERSION}
+RELEASE != uname -r | sed -e 's/RELEASE.*/RELEASE/'
+MARCH != uname -m
 
 .include <bsd.port.mk>
 
@@ -27,10 +32,10 @@ inst: ${.CURDIR}/env
 	rm -f ${.CURDIR}/pkg-plist
 	cp ${.CURDIR}/env ${PREFIX}/bin/
 	chmod ug+x ${PREFIX}/bin/env
-	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
+	cp ${WKDIR}/samba-${SAMBA_VERSION}/nsswitch/nss_winbind.so ${PREFIX}/lib/libnss_winbind.so
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/libnss_winbind.so.2
 	ln -sf ${PREFIX}/lib/libnss_winbind.so ${PREFIX}/lib/nss_winbind.so.1
-	cp ${WKDIR}/samba-3.5.21/nsswitch/nss_wins.so ${PREFIX}/lib/libnss_wins.so
+	cp ${WKDIR}/samba-${SAMBA_VERSION}/nsswitch/nss_wins.so ${PREFIX}/lib/libnss_wins.so
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/libnss_wins.so.2
 	ln -sf ${PREFIX}/lib/libnss_wins.so ${PREFIX}/lib/nss_wins.so.1
 	chmod 444 ${PREFIX}/lib/libnss_win*.so
@@ -44,14 +49,16 @@ inst: ${.CURDIR}/env
 	chmod u+x ${PREFIX}/etc/rc.d/samba
 	chown root:wheel ${PREFIX}/etc/rc.d/samba
 	mkdir -p ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/adex.so ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/ad.so ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/hash.so ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/ldap.so ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/rid.so ${PREFIX}/lib/samba/idmap
-	cp -f ${WKDIR}/samba-3.5.21/source3/bin/tdb2.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/adex.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/ad.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/hash.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/ldap.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/rid.so ${PREFIX}/lib/samba/idmap
+	cp -f ${WKDIR}/samba-${SAMBA_VERSION}/source3/bin/tdb2.so ${PREFIX}/lib/samba/idmap
 	chmod a+x ${PREFIX}/bin/*
 	chmod u+x ${PREFIX}/sbin/*
+	ln -sf ${PREFIX}/lib/libtalloc.so.2.0.5  ${PREFIX}/lib/libtalloc.so.2
+	ln -sf ${PREFIX}/lib/libtdb.so.1.2.9  ${PREFIX}/lib/libtdb.so.1
 
 install: inst ${.CURDIR}/pkg-plist
 
@@ -88,12 +95,12 @@ pkg: inst ${.CURDIR}/pkg-plist
 		${.CURDIR}/samba3.tgz ; \
 	cd ${.CURDIR}
 
-${.CURDIR}/samba3_i386.tgz: ${.CURDIR}/samba3.tgz
-	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_i386.tgz
-	mkdir -p ${CURDIR}/i386/6.3-RELEASE
-	ln -f ${.CURDIR}/samba3_i386.tgz ${.CURDIR}/i386/6.3-RELEASE/samba3_i386.tgz
+${.CURDIR}/samba3_${MARCH}.tgz: ${.CURDIR}/samba3.tgz
+	mv ${.CURDIR}/samba3.tgz ${.CURDIR}/samba3_${MARCH}.tgz
+	mkdir -p ${.CURDIR}/${MARCH}/${RELEASE}
+	ln -f ${.CURDIR}/samba3_${MARCH}.tgz ${.CURDIR}/${MARCH}/${RELEASE}/samba3_${MARCH}.tgz
 
-${.CURDIR}/samba3_i386.sum: ${.CURDIR}/samba3_i386.tgz
-	md5 ${.CURDIR}/samba3_i386.tgz > ${.CURDIR}/samba3_i386.sum
-	sha256 ${.CURDIR}/samba3_i386.tgz >> ${.CURDIR}/samba3_i386.sum
-	ln -f ${.CURDIR}/samba3_i386.sum ${.CURDIR}/i386/6.3-RELEASE/samba3_i386.sum
+${.CURDIR}/samba3_${MARCH}.sum: ${.CURDIR}/samba3_${MARCH}.tgz
+	md5 ${.CURDIR}/samba3_${MARCH}.tgz > ${.CURDIR}/samba3_${MARCH}.sum
+	sha256 ${.CURDIR}/samba3_${MARCH}.tgz >> ${.CURDIR}/samba3_${MARCH}.sum
+	ln -f ${.CURDIR}/samba3_${MARCH}.sum ${.CURDIR}/${MARCH}/${RELEASE}/samba3_${MARCH}.sum

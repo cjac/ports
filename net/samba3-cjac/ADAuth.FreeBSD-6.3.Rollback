@@ -9,7 +9,10 @@ leave_domain () {
     test ${UNATTENDED} -eq 1 && ADMIN_PASSWD=`zcat ${ADMIN_USER}_${DOMAIN}.gz`
     test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
 
-    ${SAMBA_RUNNER} net ads leave -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+    if [ -e ${SAMBA_RUNNER} ]
+    then
+	${SAMBA_RUNNER} net ads leave -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+    fi
 
     # Clear credentials
     ADMIN_PASSWD="nunya"
@@ -44,7 +47,7 @@ disable_services () {
     fi
 
     mv ${TEMP_FILE} ${RCCONF_FILE}
-    echo "samba/winbind service disabled"
+    echo "samba/winbind services disabled"
 }
 
 restore_config_files () {
@@ -59,12 +62,17 @@ restore_config_files () {
     CONFDIR=/etc
     for CONF in krb5.conf ld.so.conf ntp.conf nsswitch.conf sshd
     do
-	INITIAL_CONF=`ls ${INSTALL_SOURCE}/Backup_Files/${CONF}* | sort -n | head -1`
-	test "${INITIAL_CONF}x" = "x" && continue
+	INITIAL_CONF=`ls ${INSTALL_SOURCE}/Backup_Files/ | grep ${CONF} | sort -n | head -1`
+	if [ "${INITIAL_CONF}x" = "x" ]
+	then
+	    echo -n "${CONF}:missing "
+	    continue
+	fi
 	echo -n "${CONF} "
 	test "${CONF}" = "sshd" && CONFDIR=/etc/pam.d/
-	mv ${CONFDIR}/${CONF} ${CONFDIR}/${CONF}.rollback.`date +%s`
-	cp ${INITIAL_CONF} ${CONFDIR}/${CONF}
+	cp ${CONFDIR}/${CONF} ${CONFDIR}/${CONF}.rollback.`date +%s`
+	cp ${INSTALL_SOURCE}/Backup_Files/${INITIAL_CONF} ${CONFDIR}/${CONF}
+	INITIAL_CONF=""
     done
     
     echo "configuration files restored"

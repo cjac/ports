@@ -5,6 +5,8 @@
 #
 
 # Change the following if releases are deployed from elsewhere
+USERDOMAIN=ESD.COLLIERTECH.ORG
+SHORT_USERDOMAIN=ESD
 TAOS_RELEASE=http://www.colliertech.org/~cjac/nis-migration
 DOMAIN=ESD.COLLIERTECH.ORG
 SHORT_DOMAIN=ESD
@@ -14,7 +16,7 @@ GPG_SERVER=foxtrot.colliertech.org
 SSH_USER=cjac
 WINBIND_WAIT_TIME=10s
 EXPECTED_SHA256_HASH_6_3_RELEASE=2554ba54f0239eb49d086735bd69a37dffd9616b434e576555b56ccc375e1520
-EXPECTED_SHA256_HASH_7_1_RELEASE=4be0273b727c7a1a183e4fb79f9bdac51cdd4e935d1e437fcd7fdcedd6cecdbd
+EXPECTED_SHA256_HASH_7_1_RELEASE=df56570e3e116860e9cee1327aa1fe97c851695173dd1b773dd979eaf71bb19c
 DRYRUN=0
 INSTALL_DEPS=1
 HOSTNAME=`hostname -s`
@@ -35,22 +37,35 @@ test ${HOSTNAME_LEN} -lt 16 || HOSTNAME=`echo ${HOSTNAME} | sed -e 's/[aeiou]//g
 UNATTENDED=1
 BLACK_KEY="auth/${ADMIN_USER}_${DOMAIN}.gpg"
 
-PDCHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV |
-grep -v '^;' |
-awk '{print $4}' | 
-sed -e 's/\.$//'`
-echo "" > /tmp/DC_LIST
-for DC in ${PDCHOSTS}
+KRB5HOSTS=`dig +short _kerberos._udp.${USERDOMAIN} SRV | grep -v '^;' | awk '{print $4}' | sed -e 's/\.$//'`
+
+echo "" > /tmp/KDC_LIST
+for DC in ${KRB5HOSTS}
 do
   RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
-  test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/DC_LIST
+  test "${RTT}x" != "x" && echo ${RTT} ${DC} >> /tmp/KDC_LIST
 done
-sort -n /tmp/DC_LIST | grep ' ' | awk '{print $2}' > /tmp/SORTED_DC_LIST
-PDCHOSTS=`cat /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-NEAREST_PDCS=`head -5 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-NEAREST_PDC=`head -1 /tmp/SORTED_DC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
-PDCHOST=${NEAREST_PDC}
-NTPHOST=${PDCHOST}
+sort -n /tmp/KDC_LIST | grep ' ' | awk '{print $2}' > /tmp/SORTED_KDC_LIST
+
+LDAPHOSTS=`dig +short _kerberos._udp.${DOMAIN} SRV | grep -v '^;' | awk '{print $4}' | sed -e 's/\.$//'`
+echo "" > /tmp/LDAP_LIST
+for LDAP_SERVER in ${LDAPHOSTS}
+do
+  RTT=`ping -W1 -c1 ${LDAP_SERVER} 2>/dev/null | grep '^r' | awk -F= '{print $2}' | awk -F/ '{print $1}'`
+  test "${RTT}x" != "x" && echo ${RTT} ${LDAP_SERVER} >> /tmp/LDAP_SERVER_LIST
+done
+sort -n /tmp/LDAP_SERVER_LIST | grep ' ' | awk '{print $2}' > /tmp/SORTED_LDAP_SERVER_LIST
+
+KRB5HOSTS=`cat /tmp/SORTED_KDC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_KDCS=`head -5 /tmp/SORTED_KDC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_KDC=`head -1 /tmp/SORTED_KDC_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+KDCHOST=${NEAREST_KDC}
+NTPHOST=${KDCHOST}
+
+LDAPHOSTS=`cat /tmp/SORTED_LDAP_SERVER_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_LDAP_SERVERS=`head -5 /tmp/SORTED_LDAP_SERVER_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+NEAREST_LDAP_SERVER=`head -1 /tmp/SORTED_LDAP_SERVER_LIST | sed -E -e :a -e '$!N; s/\n/ /g; ta'`
+LDAP_SERVER=${NEAREST_LDAP_SERVER}
 
 NTP_PORT=123
 KRB5_PORT=88
@@ -64,13 +79,14 @@ NC=/usr/bin/nc
 
 UNREACHABLE=""
 
-${NC} -uz ${PDCHOST} ${NTP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} NTP"
-${NC} -z ${PDCHOST} ${KRB5_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} KRB5_PORT"
-${NC} -z ${PDCHOST} ${LDAP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_PORT"
-${NC} -z ${PDCHOST} ${LDAPS_PORT}    > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_PORT"
-${NC} -z ${PDCHOST} ${SMB_PORT}      > /dev/null || UNREACHABLE="${UNREACHABLE} SMB_PORT"
-${NC} -z ${PDCHOST} ${LDAP_GC_PORT}  > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_GC_PORT"
-${NC} -z ${PDCHOST} ${LDAPS_GC_PORT} > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_GC_PORT"
+${NC} -uz ${KDCHOST} ${NTP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} NTP"
+${NC} -z ${KDCHOST} ${KRB5_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} KRB5_PORT"
+${NC} -z ${KDCHOST} ${SMB_PORT}      > /dev/null || UNREACHABLE="${UNREACHABLE} SMB_PORT"
+
+${NC} -z ${LDAP_SERVER} ${LDAP_PORT}     > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_PORT"
+${NC} -z ${LDAP_SERVER} ${LDAPS_PORT}    > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_PORT"
+${NC} -z ${LDAP_SERVER} ${LDAP_GC_PORT}  > /dev/null || UNREACHABLE="${UNREACHABLE} LDAP_GC_PORT"
+${NC} -z ${LDAP_SERVER} ${LDAPS_GC_PORT} > /dev/null || UNREACHABLE="${UNREACHABLE} LDAPS_GC_PORT"
 
 test "${UNREACHABLE}x" = "x" || echo "cannot reach ${UNREACHABLE} port(s)"
 test "${UNREACHABLE}x" = "x" || exit
@@ -100,12 +116,6 @@ RELEASE_LONG=`uname -r`
 RELEASE_SHORT=`uname -r | awk -F- '{print $1}'`
 KERNEL_VERSION=`uname -a | awk '{print $5}'`
 
-if [ ${KERNEL_VERSION} != ${RELEASE_LONG} ]
-then
-  echo "mismatched kernel and userspace"
-  exit
-fi
-
 MARCH=`uname -m`
 FETCHER="fetch -o"
 INSTALL_ROOT=/opt/taos/samba3
@@ -124,18 +134,29 @@ RCCONF_FILE=/etc/rc.conf
 
 KRB5CONF_DIR=/etc
 KRB5CONF_BASENAME=krb5.conf
+LDAPCONF_DIR=/etc/ldap
+LDAPCONF_BASENAME=ldap.conf
+NTPCONF_DIR=/etc
 NTPCONF_BASENAME=ntp.conf
+LDSOCONF_DIR=/etc
 LDSOCONF_BASENAME=ld.so.conf
+PAMSSHD_DIR=/etc/pam.d
 PAMSSHD_BASENAME=sshd
+NSSCONF_DIR=/etc
 NSSCONF_BASENAME=nsswitch.conf
-KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
+RCSAMBA_DIR=/etc/rc.d
+RCSAMBA_BASENAME=samba
+SMBCONF_DIR="${INSTALL_ROOT}/etc/samba"
+SMBCONF_BASENAME=smb.conf
 
-SMBCONF_FILE=${INSTALL_ROOT}/etc/samba/smb.conf
-RCSAMBA_FILE=${RCDIR}/samba
-NTPCONF_FILE=/etc/${NTPCONF_BASENAME}
-LDSOCONF_FILE=/etc/${LDSOCONF_BASENAME}
-PAMSSHD_FILE=/etc/pam.d/${PAMSSHD_BASENAME}
-NSSCONF_FILE=/etc/${NSSCONF_BASENAME}
+KRB5CONF_FILE="${KRB5CONF_DIR}/${KRB5CONF_BASENAME}"
+LDAPCONF_FILE="${LDAPCONF_DIR}/${LDAPCONF_BASENAME}"
+SMBCONF_FILE="${SMBCONF_DIR}/${SMBCONF_BASENAME}"
+RCSAMBA_FILE="${RCSAMBA_DIR}/${RCSAMBA_BASENAME}"
+NTPCONF_FILE="${NTPCONF_DIR}/${NTPCONF_BASENAME}"
+LDSOCONF_FILE="${LDSOCONF_DIR}/${LDSOCONF_BASENAME}"
+PAMSSHD_FILE="${PAMSSHD_DIR}/${PAMSSHD_BASENAME}"
+NSSCONF_FILE="${NSSCONF_DIR}/${NSSCONF_BASENAME}"
 
 test ${DRYRUN} = 1 && SMBCONF_FILE="${SMBCONF_FILE}.dryrun"
 test ${DRYRUN} = 1 && RCSAMBA_FILE="${RCSAMBA_FILE}.dryrun"
@@ -146,3 +167,4 @@ test ${DRYRUN} = 1 && LDSOCONF_FILE="${LDSOCONF_FILE}.dryrun"
 test ${DRYRUN} = 1 && PAMSSHD_FILE="${PAMSSHD_FILE}.dryrun"
 
 SAMBA_RUNNER="${INSTALL_ROOT}/bin/env"
+

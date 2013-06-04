@@ -25,26 +25,26 @@ my $DOMAIN =
 	$ENV{DOMAIN} :
 	'ESD.COLLIERTECH.ORG';
 
-my $PDCHOSTS =
-	exists $ENV{PDCHOSTS} ?
-	$ENV{PDCHOSTS} :
+my $KDCHOSTS =
+	exists $ENV{KDCHOSTS} ?
+	$ENV{KDCHOSTS} :
 	`dig +short _kerberos._udp.${DOMAIN} SRV |
    grep -v '^;' |
    awk '{print \$4}' |
    sed -e 's/\.\$//'`;
 
 my %DC_LIST;
-foreach my $DC ( split(/\s+/, ${PDCHOSTS}) ){
+foreach my $DC ( split(/\s+/, ${KDCHOSTS}) ){
     my $RTT=`ping -W1 -c1 ${DC} 2>/dev/null | grep '^r' | awk -F= '{print \$2}' | awk -F/ '{print \$1}'`;
     next unless $RTT;
     $DC_LIST{$RTT} = $DC;
 }
 
-my @PDCHOSTS;
+my @KDCHOSTS;
 foreach my $RTT ( sort { $a <=> $b } keys %DC_LIST ){
-  push @PDCHOSTS, $DC_LIST{$RTT};
+  push @KDCHOSTS, $DC_LIST{$RTT};
 }
-$PDCHOSTS = join(' ', @PDCHOSTS);
+$KDCHOSTS = join(' ', @KDCHOSTS);
 
 my $INSTALL_ROOT =
 	exists $ENV{INSTALL_ROOT} ?
@@ -52,9 +52,9 @@ my $INSTALL_ROOT =
 	'/opt/taos/samba3';
 
 
-chomp $PDCHOSTS;
+chomp $KDCHOSTS;
 
-$logger->debug( "PDCHOSTS: [$PDCHOSTS]" );
+$logger->debug( "KDCHOSTS: [$KDCHOSTS]" );
 
 sub usage {
 	print "<$0> <command> [options]\n";
@@ -162,11 +162,11 @@ sub merge_krb5conf_file {
 
 		} elsif ($section eq 'realms') {
 			my $realm_content = "${DOMAIN} = {\n";
-			my @pdc_hosts = split(/\s+/, ${PDCHOSTS});
+			my @kdc_hosts = split(/\s+/, ${KDCHOSTS});
 
-			$logger->debug( Data::Dumper::Dumper( { pdc_hosts => \@pdc_hosts } ) );
+			$logger->debug( Data::Dumper::Dumper( { kdc_hosts => \@kdc_hosts } ) );
 
-			foreach my $kdc (@pdc_hosts){
+			foreach my $kdc (@kdc_hosts){
 						$realm_content .= "  kdc = tcp/$kdc\n";
 						$realm_content .= "  kdc = udp/$kdc\n";
 			}

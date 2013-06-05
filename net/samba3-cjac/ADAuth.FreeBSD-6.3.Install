@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # source common environment details
-test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
+test "${KDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
 
 if [ ${KERNEL_VERSION} != ${RELEASE_LONG} ]
 then

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test "${PDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
+test "${KDCHOST}x" = "x" && . ADAuth.FreeBSD-6.3.Environment
 
 join_domain () {
     echo "joining ${DOMAIN} active directory domain"
@@ -15,7 +15,7 @@ join_domain () {
     test ${UNATTENDED} -eq 1 && ADMIN_CREDENTIALS="${ADMIN_USER}%${ADMIN_PASSWD}"
 
     # Join the domain
-    ${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${PDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
+    ${SAMBA_RUNNER} net ads join createcomputer=${OU_TO_JOIN} -n ${HOSTNAME} -S ${KDCHOST} -U ${ADMIN_CREDENTIALS} >/dev/null
 
     JOIN_STATUS=$?
 
@@ -114,8 +114,8 @@ verify_join () {
   echo "id latency: ${ID_LATENCY} seconds"
 
   HIGH_LATENCY=0
-  test ${GETENT_LATENCY} -gt 3 && HIGH_LATENCY=1
-  test ${ID_LATENCY} -gt 5 && HIGH_LATENCY=1
+  test ${GETENT_LATENCY} -gt 2 && HIGH_LATENCY=1
+  test ${ID_LATENCY} -gt 7 && HIGH_LATENCY=1
 
   if [ ${HIGH_LATENCY} = 1 ]
   then
@@ -187,7 +187,7 @@ create_smbconf_file () {
 
     grep -v 'password server' smb.conf > /tmp/smb.conf
     echo "" >> /tmp/smb.conf
-    echo "        password server = ${NEAREST_PDCS}" >> /tmp/smb.conf
+    echo "        password server = ${NEAREST_KDCS}" >> /tmp/smb.conf
     mv /tmp/smb.conf .
 
 }
@@ -286,7 +286,7 @@ merge_krb5conf_file () {
 				cp -f ${KRB5CONF_FILE} ${TEMP_FILE}
 				echo "[realms]" >> ${TEMP_FILE}
 				echo "${DOMAIN} = {" >> ${TEMP_FILE}
-				for kdc in ${PDCHOSTS}
+				for kdc in ${KDCHOSTS}
 				do
 						echo "  kdc = tcp/$kdc" >> ${TEMP_FILE}
 						echo "  kdc = udp/$kdc" >> ${TEMP_FILE}
@@ -392,7 +392,7 @@ create_winbind_supportdirs () {
 
 install_package () {
     echo "installing taos samba3 package"
-    # Fetch Taos's build of samba 3.5.21
+    # Fetch Taos's build of samba ${SAMBA_VERSION}
 
     test -d ${MARCH}/${RELEASE} || mkdir -p ${MARCH}/${RELEASE}
 
@@ -442,9 +442,12 @@ verify_package_installation () {
 
 }
 
+ORIGINAL_PERL_CHECKED=0
+
 install_dependencies () {
 
     # Check if perl is originally installed
+    ORIGINAL_PERL_CHECKED=1
     ORIGINAL_PERL=`which perl`
 
     # if not, add it to the dependency list
@@ -475,6 +478,11 @@ sync_clocks () {
 
 
 clean_up_perl () {
+    if [ ${ORIGINAL_PERL_CHECKED} = 0 ]
+    then
+	echo "did not check for original perl installation.  not removing."
+	return
+    fi
 
     # clean up perl if it was not originally installed
     if [ "${ORIGINAL_PERL}x" != "${PERL}x" ]
